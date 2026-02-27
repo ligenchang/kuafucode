@@ -1,0 +1,1921 @@
+"""
+nvagent — Claude Code-style terminal REPL.
+
+Writes directly to stdout (ANSI colors).  All output is native terminal text:
+fully scrollable, selectable, and copyable like any shell command.
+
+No TUI framework — no custom canvas — no copy/paste friction.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import concurrent.futures
+import sys
+import os
+import signal
+import threading
+import traceback
+from datetime import datetime
+from pathlib import Path
+import re
+import time
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Readline — up/down arrow history, line editing, Ctrl+R search
+# ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    import readline as _readline
+    _READLINE_AVAILABLE = True
+except ImportError:
+    _readline = None          # type: ignore[assignment]
+    _READLINE_AVAILABLE = False
+
+_HISTORY_FILE = Path.home() / ".nvagent" / "input_history"
+_MAX_HISTORY   = 1_000
+
+
+def _setup_readline() -> None:
+    """Initialise readline: load history file and configure sensible defaults."""
+    if not _READLINE_AVAILABLE or not _readline:
+        return
+    try:
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if _HISTORY_FILE.exists():
+            _readline.read_history_file(str(_HISTORY_FILE))
+        _readline.set_history_length(_MAX_HISTORY)
+        # vi-style or emacs (default emacs — matches bash)
+        _readline.parse_and_bind("set editing-mode emacs")
+        # Tab completion: complete from history on double-tab
+        _readline.parse_and_bind("tab: complete")
+    except Exception:
+        pass
+
+
+def _save_readline_history() -> None:
+    """Persist history to disk. Called on clean exit."""
+    if not _READLINE_AVAILABLE or not _readline:
+        return
+    try:
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _readline.write_history_file(str(_HISTORY_FILE))
+    except Exception:
+        pass
+
+
+def _rl_prompt(colored: str) -> str:
+    """Wrap ANSI escape sequences in readline non-printing markers (\001...\002).
+
+    Without these markers readline miscounts the visible prompt width, causing
+    the cursor to land in the wrong column after up-arrow edits.
+    """
+    return re.sub(r"(\x1b\[[0-9;]*m)", r"\001\1\002", colored)
+
+from nvagent.config import Config
+from nvagent.core.loop import Agent, AgentEvent
+from nvagent.core.session import Session, SessionStore
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blocking-stdout guard
+#
+# When the kernel buffer is momentarily full, direct write() calls can raise
+# BlockingIOError (EAGAIN/errno 35 on macOS) if the fd was set to O_NONBLOCK.
+# Patch sys.stdout.write / flush to temporarily restore blocking mode on that
+# specific error and retry — this affects only the file object, not the fd.
+# ─────────────────────────────────────────────────────────────────────────────
+
+import fcntl as _fcntl
+
+_orig_stdout_write = sys.stdout.write
+_orig_stdout_flush = sys.stdout.flush
+
+
+def _safe_write(text: str) -> int:
+    try:
+        return _orig_stdout_write(text)
+    except (BlockingIOError, OSError):
+        fd = sys.stdout.fileno()
+        flags = _fcntl.fcntl(fd, _fcntl.F_GETFL)
+        _fcntl.fcntl(fd, _fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+        try:
+            return _orig_stdout_write(text)
+        finally:
+            _fcntl.fcntl(fd, _fcntl.F_SETFL, flags)
+
+
+def _safe_flush() -> None:
+    try:
+        _orig_stdout_flush()
+    except (BlockingIOError, OSError):
+        pass
+
+
+sys.stdout.write = _safe_write  # type: ignore[method-assign]
+sys.stdout.flush = _safe_flush  # type: ignore[method-assign]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ANSI helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+RESET  = "\033[0m"
+BOLD   = "\033[1m"
+DIM    = "\033[2m"
+HIDE_CURSOR = "\033[?25l"
+SHOW_CURSOR = "\033[?25h"
+
+# Palette
+GREEN  = "\033[38;2;118;185;0m"      # NVIDIA green
+BLUE   = "\033[38;2;121;192;255m"    # user blue
+WHITE  = "\033[38;2;230;237;243m"
+ORANGE = "\033[38;2;240;136;62m"     # tool calls
+GRAY   = "\033[38;2;139;148;158m"    # previews / dim
+YELLOW = "\033[33m"
+RED    = "\033[31m"
+BRED   = "\033[1;31m"
+VIOLET = "\033[38;2;167;139;250m"    # spinner / thinking
+
+
+def _c(*parts: str) -> str:
+    return "".join(parts) + RESET
+
+
+# Terminal-width cache (refreshed at most every 0.5 s)
+_cols_cache: tuple[float, int] = (0.0, 80)
+
+
+def _cols() -> int:
+    """Return current terminal column count, cached for 0.5 s."""
+    global _cols_cache
+    now = time.monotonic()
+    if now - _cols_cache[0] < 0.5:
+        return _cols_cache[1]
+    try:
+        w = os.get_terminal_size().columns
+    except OSError:
+        w = 80
+    _cols_cache = (now, w)
+    return w
+
+
+def _rule(char: str = "─", color: str = DIM) -> str:
+    return _c(color, char * _cols())
+
+
+def _ts() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _git_branch(workspace: Path) -> str:
+    """Return 'branch' string or empty string if not in a git repo."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=str(workspace), capture_output=True, text=True, timeout=2,
+        )
+        branch = result.stdout.strip()
+        if branch and branch != "HEAD":
+            return branch
+        # Detached HEAD — show short hash
+        result2 = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(workspace), capture_output=True, text=True, timeout=2,
+        )
+        h = result2.stdout.strip()
+        return f"detached@{h}" if h else ""
+    except Exception:
+        return ""
+
+
+def _git_status_summary(workspace: Path) -> str:
+    """Return short summary like '+2 ~1 -0' or '' if no changes."""
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(workspace), capture_output=True, text=True, timeout=2,
+        )
+        lines = [l for l in r.stdout.splitlines() if l.strip()]
+        if not lines:
+            return "clean"
+        added    = sum(1 for l in lines if l[:2] in ("A ", "??", "AM"))
+        modified = sum(1 for l in lines if l[:2] in (" M", "M ", "MM"))
+        deleted  = sum(1 for l in lines if l[:2] in (" D", "D "))
+        parts_s  = []
+        if added:    parts_s.append(f"+{added}")
+        if modified: parts_s.append(f"~{modified}")
+        if deleted:  parts_s.append(f"-{deleted}")
+        return " ".join(parts_s) if parts_s else "clean"
+    except Exception:
+        return ""
+
+
+def _git_info(workspace: Path) -> tuple[str, str]:
+    """Return (branch, status_summary) running both git calls in parallel."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _pool:
+        _bf = _pool.submit(_git_branch, workspace)
+        _sf = _pool.submit(_git_status_summary, workspace)
+        return _bf.result(), _sf.result()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Markdown renderer  (line-level — applied after each newline in streamed output)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Light code-highlighting palette (just structural distinction, no full lexer)
+CODE_BLOCK  = "\033[38;2;180;180;180m"   # light gray for code bodies
+CODE_BORDER = "\033[38;2;100;100;120m"   # muted purple-gray for fence lines
+HEADING1    = "\033[38;2;255;215;0m"     # gold
+HEADING2    = "\033[38;2;121;192;255m"   # same as BLUE
+HEADING3    = WHITE
+QUOTE_COLOR = "\033[38;2;167;139;250m"   # VIOLET
+BULLET_COL  = "\033[38;2;118;185;0m"     # GREEN
+
+# Pre-compiled inline markdown patterns (avoid re-compiling on every line)
+_RE_INLINE_CODE = re.compile(r"`([^`]+)`")
+_RE_BOLD1       = re.compile(r"\*\*(.+?)\*\*")
+_RE_BOLD2       = re.compile(r"__(.+?)__")
+_RE_ITALIC      = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+# Pre-compiled block markdown patterns
+# Suppress model meta-commentary lines emitted as free text
+_META_LINE_RE   = re.compile(
+    r"^\[(?:Used \d+ tools?|Tool(?:s)? used|I used|Tool call)[\s:]",
+    re.IGNORECASE,
+)
+# Pre-formatted ANSI replacement strings
+_INLINE_CODE_FMT = f"\033[38;2;240;136;62m{{}}{{RESET}}".format
+_BOLD_FMT        = f"{BOLD}{WHITE}{{}}{RESET}".format
+_ITALIC_FMT      = f"{DIM}{WHITE}{{}}{RESET}".format
+
+
+def _render_inline_md(text: str) -> str:
+    """Convert inline markdown marks to ANSI (bold, italic, inline code)."""
+    # Inline code  `...`
+    text = _RE_INLINE_CODE.sub(
+        lambda m: f"\033[38;2;240;136;62m{m.group(1)}{RESET}",
+        text,
+    )
+    # Bold  **...**  or  __...__
+    text = _RE_BOLD1.sub(lambda m: f"{BOLD}{WHITE}{m.group(1)}{RESET}", text)
+    text = _RE_BOLD2.sub(lambda m: f"{BOLD}{WHITE}{m.group(1)}{RESET}", text)
+    # Italic  *...*  (but not ** already consumed)
+    text = _RE_ITALIC.sub(lambda m: f"{DIM}{WHITE}{m.group(1)}{RESET}", text)
+    return text
+
+
+def _render_line(
+    text: str,
+    in_fence: list,    # mutable [bool]
+    fence_lang: list,  # mutable [str]
+) -> str:
+    """
+    Render a single line of model output as ANSI text.
+    *in_fence* and *fence_lang* carry state across calls.
+    Returns the fully-styled string (no trailing newline).
+    """
+    stripped = text.strip()
+
+    # ── Code fence boundary ───────────────────────────────────────────────
+    if stripped.startswith("```"):
+        if not in_fence[0]:
+            in_fence[0]  = True
+            fence_lang[0] = stripped[3:].strip() or ""
+            lang_tag = f" {fence_lang[0]}" if fence_lang[0] else ""
+            return f"{CODE_BORDER}  ╭─{lang_tag}{RESET}"
+        else:
+            in_fence[0]  = False
+            fence_lang[0] = ""
+            return f"{CODE_BORDER}  ╰─{RESET}"
+
+    if in_fence[0]:
+        return f"{CODE_BLOCK}  {text}{RESET}"
+
+    # ── Headings ──────────────────────────────────────────────────────────
+    if stripped.startswith('#'):
+        _hi = 0
+        while _hi < len(stripped) and stripped[_hi] == '#':
+            _hi += 1
+        if 1 <= _hi <= 3 and _hi < len(stripped) and stripped[_hi] == ' ':
+            level   = _hi
+            h_text  = stripped[_hi + 1:].strip()
+            content = _render_inline_md(h_text)
+            if level == 1:
+                pad = "═" * min(_cols() - 4, len(h_text) + 2)
+                return f"\n{BOLD}{HEADING1}  {content}  {RESET}\n{DIM}{HEADING1}  {pad}{RESET}"
+            if level == 2:
+                return f"\n{BOLD}{HEADING2}  {content}{RESET}"
+            return f"{BOLD}{HEADING3}  {content}{RESET}"
+
+    # ── Horizontal rule ───────────────────────────────────────────────────
+    if stripped in ("---", "***", "___") and len(stripped) >= 3:
+        return _rule()
+
+    # ── Blockquote ────────────────────────────────────────────────────────
+    if stripped.startswith("> "):
+        return f"{QUOTE_COLOR}  │ {_render_inline_md(stripped[2:])}{RESET}"
+
+    # ── Bullet / Numbered list (pure-string, no regex) ───────────────────
+    _ls = text.lstrip('\t ')
+    if _ls and _ls[0] in '-*•' and len(_ls) > 1 and _ls[1] in ' \t':
+        _body = _ls[1:].lstrip(' \t')
+        if _body:
+            _indent = (len(text) - len(_ls)) // 2
+            _bullet = ("◦" if _indent else "•")
+            _pad    = "  " * _indent
+            return f"{BULLET_COL}  {_pad}{_bullet}{RESET} {_render_inline_md(_body)}"
+
+    # ── Numbered list ─────────────────────────────────────────────────────
+    _dot = _ls.find('. ')
+    if _dot > 0 and _ls[:_dot].isdigit():
+        _indent = (len(text) - len(_ls)) // 2
+        _pad    = "  " * _indent
+        return f"{BULLET_COL}  {_pad}{_ls[:_dot]}.{RESET} {_render_inline_md(_ls[_dot + 2:])}"
+
+    # ── Normal text ───────────────────────────────────────────────────────
+    if text.strip():
+        return f"  {_render_inline_md(text)}"
+    return ""
+
+
+def out(text: str = "") -> None:
+    """Write a line to stdout and flush immediately."""
+    print(text, flush=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Animated spinner
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_SPINNER_INTERVAL = 0.08   # seconds per frame
+
+
+class _Spinner:
+    """
+    Async braille spinner that writes in-place using \\r.
+    Call start() / stop() to control.  stop() clears the line.
+    Thread-safe: all writes go through the asyncio event loop.
+    """
+
+    def __init__(self) -> None:
+        self._task:        asyncio.Task | None = None
+        self._msg:         str   = ""
+        self._active:      bool  = False
+        self._frame:       int   = 0
+        self._start_mono:  float = 0.0   # wall time when spinner last started
+        self._token_count: int   = 0     # tokens streamed since last start
+
+    def _write_frame(self) -> None:
+        frame = _SPINNER_FRAMES[self._frame % len(_SPINNER_FRAMES)]
+        self._frame += 1
+        elapsed = time.monotonic() - self._start_mono
+        elapsed_str = f"  {int(elapsed)}s" if elapsed >= 1.0 else ""
+        tok_str = f"  {self._token_count} tok" if self._token_count > 0 else ""
+        sys.stdout.write(
+            f"\r  {VIOLET}{frame}{RESET} {DIM}{GRAY}{self._msg}{elapsed_str}{tok_str}{RESET}   "
+        )
+        sys.stdout.flush()
+
+    def add_tokens(self, n: int = 1) -> None:
+        """Increment the live token counter shown in the spinner."""
+        self._token_count += n
+
+    def _clear(self) -> None:
+        # Always erase to the full terminal width — _write_frame appends elapsed
+        # and token-count suffixes that make the actual line wider than _msg alone.
+        # Using cols-1 ensures we never wrap to a new line on a narrow terminal.
+        cols = _cols()
+        sys.stdout.write(f"\r{' ' * (cols - 1)}\r")
+        sys.stdout.flush()
+
+    async def _run(self) -> None:
+        while self._active:
+            self._write_frame()
+            await asyncio.sleep(_SPINNER_INTERVAL)
+
+    def start(self, msg: str) -> None:
+        self._msg         = msg
+        self._active      = True
+        self._frame       = 0
+        self._start_mono  = time.monotonic()   # reset elapsed timer
+        self._token_count = 0                   # reset live token counter
+        # Hide cursor while spinner runs
+        sys.stdout.write(HIDE_CURSOR)
+        sys.stdout.flush()
+        self._task = asyncio.ensure_future(self._run())
+
+    def update(self, msg: str) -> None:
+        """Change label without stopping."""
+        self._msg = msg
+
+    async def stop(self) -> None:
+        """Async stop — awaits the task cancellation so the line is fully clear before caller continues."""
+        self._active = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+        self._clear()
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.flush()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Async input helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+_ANSI_STRIP_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(s: str) -> str:
+    return _ANSI_STRIP_RE.sub("", s)
+
+
+async def _ainput(prompt: str, *, use_readline: bool = False) -> str:
+    """
+    Non-blocking input that doesn't starve the event loop.
+
+    When *use_readline* is True (main ❯ prompt) calls Python's built-in
+    input() which readline hooks into, giving up/down arrow history, line
+    editing, and Ctrl+R reverse search — all for free.
+
+    For continuation / correction prompts (use_readline=False) falls back to
+    the fast sys.stdin.readline path so those prompts are unaffected.
+    """
+    loop = asyncio.get_event_loop()
+    if use_readline and _READLINE_AVAILABLE:
+        # input() hands off to readline which renders the prompt and manages
+        # the terminal raw state itself.  We must pass the prompt through
+        # _rl_prompt() so readline correctly counts the visible width of the
+        # ANSI-coloured prefix.
+        rl_prompt = _rl_prompt(prompt)
+        try:
+            result: str = await loop.run_in_executor(None, input, rl_prompt)
+        except EOFError:
+            raise
+        return result
+    # Fast path for non-readline prompts (continuation / correction)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    return (await loop.run_in_executor(None, sys.stdin.readline)).rstrip("\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Arrow-key picker
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_arrow_menu(title: str, options: list[str], current: str | None) -> str | None:
+    """Blocking arrow-key menu.  Must be called from the main thread.
+
+    Uses os.read/os.write on raw fds to avoid fighting with readline's
+    internal buffering of sys.stdin.
+    Returns the chosen option string, or None on cancel (Esc/Ctrl+C/q).
+    """
+    import select as _sel
+    import os as _os
+    try:
+        import tty as _tty
+        import termios as _termios
+    except ImportError:
+        return None  # non-Unix fallback
+
+    n   = len(options)
+    cur = next((i for i, o in enumerate(options) if o == current), 0)
+    ifd = sys.stdin.fileno()
+    ofd = sys.stdout.fileno()
+
+    _R  = b"\x1b[0m"
+    _B  = b"\x1b[1m"
+    _D  = b"\x1b[2m"
+    _G  = b"\x1b[32m"
+    _W  = b"\x1b[97m"
+    _BG = b"\x1b[48;5;236m"
+    _NL = b"\r\n"
+    _EL = b"\r\x1b[2K"  # carriage-return + erase line
+
+    def _enc(s: str) -> bytes:
+        return s.encode("utf-8", errors="replace")
+
+    def _render() -> bytes:
+        buf = bytearray()
+        buf += _EL + _B + _G + _enc(f"  {title}") + _R + _NL
+        buf += _EL + _NL
+        for i, opt in enumerate(options):
+            is_sel    = (i == cur)
+            is_active = (opt == current)
+            tag = b"  " + _D + b"\xe2\x86\x90 current" + _R if is_active else b""  # ← current
+            if is_sel:
+                buf += _EL + _G + b"  \xe2\x96\xb6 " + _R + _BG + _W + _B + _enc(opt) + _R + tag + _NL
+            else:
+                buf += _EL + b"    " + _D + _enc(opt) + _R + tag + _NL
+        buf += _EL + _NL
+        buf += _EL + _D + b"  \xe2\x86\x91 \xe2\x86\x93  move   Enter confirm   Esc cancel" + _R + _NL
+        return bytes(buf)
+
+    total_lines = n + 4  # title + blank + items + blank + hint
+
+    def _draw(redraw: bool) -> None:
+        out = bytearray()
+        if redraw:
+            out += f"\x1b[{total_lines}A".encode()  # cursor up N lines
+        out += _render()
+        _os.write(ofd, bytes(out))
+
+    old = _termios.tcgetattr(ifd)
+    try:
+        _tty.setraw(ifd)
+        _draw(redraw=False)
+        while True:
+            ch = _os.read(ifd, 1)
+            if ch == b"\x1b":
+                # Check if more bytes follow (arrow = ESC [ A/B)
+                r, _, _ = _sel.select([ifd], [], [], 0.05)
+                if r:
+                    nxt = _os.read(ifd, 2)   # read "[A" or "[B"
+                    if nxt == b"[A":          # ↑
+                        cur = (cur - 1) % n
+                        _draw(redraw=True)
+                        continue
+                    if nxt == b"[B":          # ↓
+                        cur = (cur + 1) % n
+                        _draw(redraw=True)
+                        continue
+                    # Some other escape sequence — ignore, don't cancel
+                    continue
+                # Plain Esc → cancel
+                _os.write(ofd, b"\r\n")
+                return None
+            if ch in (b"\r", b"\n"):
+                _os.write(ofd, b"\r\n")
+                return options[cur]
+            if ch in (b"\x03", b"\x04", b"q", b"Q"):
+                _os.write(ofd, b"\r\n")
+                return None
+    finally:
+        try:
+            _termios.tcsetattr(ifd, _termios.TCSADRAIN, old)
+        except Exception:
+            pass
+
+
+async def _arrow_menu(title: str, options: list[str], current: str | None = None) -> str | None:
+    """Thin async shim — calls _run_arrow_menu on the calling (main) thread."""
+    return _run_arrow_menu(title, options, current)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File watcher  (lightweight mtime polling — no external deps)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _FileWatcher:
+    """
+    Async background task that polls file mtimes every 2 s.
+    Tracked paths are registered with track(); changed paths are consumed
+    with pop_changed() before each new agent turn.
+    """
+
+    POLL_INTERVAL = 2.0
+
+    def __init__(self) -> None:
+        self._mtimes: dict[Path, float] = {}
+        self._changed: set[Path]        = set()
+        self._task: asyncio.Task | None = None
+
+    def track(self, paths: list[Path]) -> None:
+        """Register new paths for watching (already-tracked paths are updated)."""
+        for p in paths:
+            try:
+                if p.exists() and p.is_file():
+                    self._mtimes[p] = p.stat().st_mtime
+            except OSError:
+                pass
+
+    def pop_changed(self) -> list[Path]:
+        """Return and clear the set of paths that changed since last pop."""
+        changed, self._changed = list(self._changed), set()
+        return changed
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.ensure_future(self._poll())
+
+    async def stop(self) -> None:
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def _poll(self) -> None:
+        while True:
+            await asyncio.sleep(self.POLL_INTERVAL)
+            for p, old_mtime in list(self._mtimes.items()):
+                try:
+                    new_mtime = p.stat().st_mtime
+                    if new_mtime != old_mtime:
+                        self._mtimes[p] = new_mtime
+                        self._changed.add(p)
+                except OSError:
+                    pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shell completion helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# All recognised slash commands — used for prefix expansion
+_COMMANDS: list[str] = [
+    "/help", "/?",
+    "/new", "/n",
+    "/clear", "/cls",
+    "/undo",
+    "/expand",
+    "/compact",
+    "/model",
+    "/cost",
+    "/files",
+    "/status",
+    "/quit", "/exit", "/q",
+]
+
+
+def _complete_command(partial: str) -> str | None:
+    """
+    If *partial* starts with '/' and isn't an exact command, return the first
+    command that has *partial* as a prefix.  Returns None if ambiguous / unknown.
+    """
+    if not partial.startswith("/"):
+        return None
+    if partial in _COMMANDS:
+        return None          # already exact
+    matches = [c for c in _COMMANDS if c.startswith(partial)]
+    return matches[0] if len(matches) == 1 else None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Formatting helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fmt_args(name: str, args: dict) -> str:
+    if name == "read_file":
+        path  = args.get("path", "")
+        extra = f" L{args['start_line']}-{args.get('end_line','?')}" if "start_line" in args else ""
+        return f'"{path}"{extra}'
+    if name in ("write_file", "edit_file", "delete_file"):
+        return f'"{args.get("path","")}"'
+    if name == "get_symbols":
+        fi = " +imports" if args.get("include_imports") else ""
+        fd = " +deps"    if args.get("follow_imports")  else ""
+        return f'"{args.get("path","")}"' + fi + fd
+    if name == "find_symbol":
+        kinds = args.get("kinds")
+        k_str = f" kinds={','.join(kinds)}" if kinds else ""
+        exact_str = " exact" if args.get("exact") else ""
+        return f'"{args.get("query","")}"' + exact_str + k_str
+    if name == "find_definition":
+        return f'"{args.get("name","")}"'
+    if name == "find_references":
+        return f'"{args.get("name","")}"'
+    if name == "run_analysis":
+        tool = args.get("tool","?")
+        path = args.get("path")
+        suffix = f' "{path}"' if path else " workspace"
+        return f'{tool}{suffix}'
+    if name == "get_dep_graph":
+        flags = []
+        if args.get("show_transitive"): flags.append("transitive")
+        if args.get("show_dependents"): flags.append("dependents")
+        if args.get("detect_cycles"):   flags.append("cycles")
+        f_str = " +" + "+".join(flags) if flags else ""
+        return f'"{args.get("path","")}"' + f_str
+    if name == "run_command":
+        cmd = args.get("command", "")
+        return f'"{cmd[:70]}{"…" if len(cmd) > 70 else ""}"'
+    if name in ("search_code", "git_diff"):
+        val = args.get("query") or args.get("file") or ""
+        return f'"{val}"' if val else ""
+    if name == "read_url":
+        u = args.get("url","")
+        return f'"{u[:60]}{"…" if len(u)>60 else ""}"'
+    if args:
+        k = next(iter(args))
+        v = str(args[k])
+        return f'"{v[:60]}{"…" if len(v) > 60 else ""}"'
+    return ""
+
+
+def _smart_preview(tool_name: str, result: str, max_lines: int = 5) -> str:
+    """Produce a concise, tool-aware preview of a tool result."""
+    result = result.strip()
+    if not result:
+        return "(empty)"
+
+    lines = result.splitlines()
+    n = len(lines)
+
+    # Tool-specific first-line summaries
+    if tool_name == "write_file" and result.startswith("✓"):
+        return result.splitlines()[0]
+    if tool_name == "edit_file" and result.startswith("✓"):
+        return result.splitlines()[0]
+    if tool_name == "delete_file" and result.startswith("✓"):
+        return result.splitlines()[0]
+    if tool_name in ("git_status", "git_diff"):
+        changed = sum(1 for l in lines if l and l[0] in " MADRCU?")
+        return f"{lines[0]}" + (f"  ({n} lines)" if n > 1 else "")
+    if tool_name == "read_file":
+        # Distinguish symbol-map redirect from actual content read
+        first = lines[0] if lines else ""
+        if first.startswith("[Symbol map:"):
+            # Extract total line count from header e.g. "[Symbol map: tools.py — 2538 lines total]"
+            import re as _re
+            m = _re.search(r"(\d[\d,]*)\s+lines total", first)
+            total_lines = m.group(1) if m else "?"
+            return _c(DIM, YELLOW, f"symbol map  ({total_lines} lines — use start_line/end_line)")
+        return f"{n} line{'s' if n != 1 else ''} read"
+    if tool_name == "search_code":
+        matches = sum(1 for l in lines if l.strip() and not l.startswith("#"))
+        return f"{matches} match{'es' if matches != 1 else ''}"
+    if tool_name == "get_symbols":
+        syms = sum(1 for l in lines if l.strip() and not l.startswith("#"))
+        return f"{syms} symbol{'s' if syms != 1 else ''}"
+    if tool_name == "find_symbol":
+        return result.splitlines()[0] if " result" in result else f"{n} results"
+    if tool_name == "run_analysis":
+        return result.splitlines()[0] if " issue" in result else lines[0]
+    if tool_name == "find_definition":
+        return lines[0] if lines else "(no results)"
+    if tool_name == "find_references":
+        return result.splitlines()[0] if " reference" in result else lines[0]
+    if tool_name == "run_command":
+        # Show exit code if visible, else first non-empty line
+        first = next((l for l in lines if l.strip()), "")
+        extra = f"  (+{n-1} lines)" if n > 1 else ""
+        return first[:120] + extra
+    if tool_name == "get_dep_graph":
+        return lines[0]
+    if tool_name == "read_url":
+        return f"{n} lines fetched"
+
+    # Generic: first non-empty line + line count
+    first = next((l.strip() for l in lines if l.strip()), "")
+    if n <= max_lines:
+        return first
+    return first + _c(DIM, f"  (+{n-1} more lines)")
+
+
+# Legacy shim — used in some older call sites
+def _preview(result: str, max_lines: int = 4) -> str:
+    return _smart_preview("generic", result, max_lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# @file mention expansion
+# ─────────────────────────────────────────────────────────────────────────────
+
+_AT_MENTION_RE = re.compile(r'@([^\s@,;(){}\[\]]+)')
+_AT_MENTION_MAX_CHARS = 20_000   # truncate very large files
+
+
+def _expand_at_mentions(message: str, workspace: Path) -> tuple[str, list[str]]:
+    """
+    Detect @path tokens in *message*, resolve each to a file in the workspace,
+    and append the file's contents as a fenced code block after the message.
+
+    Returns (expanded_message, list_of_resolved_token_strings).
+    Tokens that don't resolve to an existing file are silently left as-is.
+    """
+    tokens_found: list[tuple[str, Path]] = []
+    seen: set[str] = set()
+    for m in _AT_MENTION_RE.finditer(message):
+        token = m.group(1)
+        if token in seen:
+            continue
+        seen.add(token)
+        # Try relative to workspace, then as-is (absolute or cwd-relative)
+        for cand in (workspace / token, Path(token)):
+            try:
+                resolved = cand.resolve()
+                if resolved.exists() and resolved.is_file():
+                    tokens_found.append((token, resolved))
+                    break
+            except Exception:
+                pass
+
+    if not tokens_found:
+        return message, []
+
+    extra_parts: list[str] = []
+    resolved_tokens: list[str] = []
+    for token, fpath in tokens_found:
+        resolved_tokens.append(token)
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="replace")
+            truncated_note = ""
+            if len(content) > _AT_MENTION_MAX_CHARS:
+                content = content[:_AT_MENTION_MAX_CHARS]
+                truncated_note = f"\n... (truncated to {_AT_MENTION_MAX_CHARS:,} chars)"
+            lang = fpath.suffix.lstrip(".") or "text"
+            extra_parts.append(
+                f"\n\n[Contents of {token}]\n```{lang}\n{content}{truncated_note}\n```"
+            )
+        except Exception as exc:
+            extra_parts.append(f"\n\n[Could not read {token}: {exc}]")
+
+    return message + "".join(extra_parts), resolved_tokens
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REPL
+# ─────────────────────────────────────────────────────────────────────────────
+
+class NVAgentREPL:
+    """Plain-terminal Claude Code-style REPL."""
+
+    def __init__(
+        self,
+        workspace: Path,
+        config: Config,
+        session: Session,
+        session_store: SessionStore,
+        no_confirm: bool = False,
+    ):
+        self.workspace     = workspace
+        self.config        = config
+        self.session       = session
+        self.session_store = session_store
+        self.no_confirm    = no_confirm
+        self.agent: Agent | None = None
+        self._cancelled    = False
+        self._watcher      = _FileWatcher()
+        # Stores the most recent raw tool result for /expand
+        self._last_tool_result: str = ""
+        self._last_tool_name_for_expand: str = ""
+        # Set by Ctrl+C during a streaming turn; _stream() checks this
+        self._interrupt_event: asyncio.Event = asyncio.Event()
+        # If a correction was typed during a Ctrl+C prompt, _stream sets this
+        # and _run_loop sends it automatically on the next iteration.
+        self._pending_correction: str | None = None
+
+    # ── Header ────────────────────────────────────────────────────────────────
+
+    def _print_header(self) -> None:
+        model    = self.config.models.default.split("/")[-1]
+        branch, _git_status = _git_info(self.workspace)
+        git_str  = _c(DIM, f"  git:{branch}") if branch else ""
+
+        # Mode / guard indicators — listed after the model name
+        badge_parts: list[str] = []
+        if self.config.agent.dry_run:
+            badge_parts.append(_c(BOLD, YELLOW, " ╳ DRY RUN "))
+        if self.config.agent.safe_mode:
+            badge_parts.append(_c(BOLD, YELLOW, "SAFE MODE"))
+        if self.config.agent.approve_writes:
+            badge_parts.append(_c(VIOLET, "APPROVE WRITES"))
+        if self.config.agent.plan_preview:
+            badge_parts.append(_c(DIM, BLUE, "PLAN PREVIEW"))
+        badge_str = ("  " + "  ".join(badge_parts)) if badge_parts else ""
+
+        # Session info
+        n_msgs  = sum(1 for m in self.session.messages if m["role"] == "user")
+        sess_str = f"session #{self.session.id}"
+
+        out()
+        out(_rule("─"))
+        out(
+            f"  {_c(BOLD, GREEN, 'nvagent')}"
+            f"  {_c(DIM, GRAY, model)}"
+            f"  {_c(DIM, GRAY, str(self.workspace))}"
+            f"{git_str}{badge_str}"
+        )
+        out(
+            _c(DIM, f"  {sess_str}  ·  {self.session.created_at[:16]}")
+            + _c(DIM, GRAY, "   Type /help for commands  ·  Ctrl+C to interrupt")
+        )
+        if self.session.messages:
+            out(_c(DIM, YELLOW, f"  ↩  Resuming — {n_msgs} previous exchange{'s' if n_msgs != 1 else ''}"))
+        if self.config.agent.dry_run:
+            out(_c(YELLOW, f"  ⚠  DRY RUN MODE: writes and commands are simulated, no files will change."))
+        out(_rule("─"))
+        out()
+
+    # ── Stream one turn ───────────────────────────────────────────────────────
+
+    async def _stream(self, message: str) -> None:
+        self._cancelled = False
+        self._interrupt_event.clear()
+
+        # Install SIGINT handler that sets the interrupt event instead of
+        # raising KeyboardInterrupt so we can offer a correction prompt.
+        _orig_sigint = signal.getsignal(signal.SIGINT)
+
+        # Declared early so _sigint_handler can reference them via closure.
+        _spinner_ref: list["_Spinner"] = []  # set after spinner is created
+        _agent_task_ref: list[asyncio.Task] = []  # set after agent task is created
+
+        def _sigint_handler(sig, frame):
+            self._interrupt_event.set()
+            # Also cancel the running agent task so any blocking await
+            # (e.g. waiting for the first API token) is immediately interrupted.
+            if _agent_task_ref:
+                try:
+                    asyncio.get_event_loop().call_soon_threadsafe(_agent_task_ref[0].cancel)
+                except Exception:
+                    pass
+
+        signal.signal(signal.SIGINT, _sigint_handler)
+
+        async def _confirm_write(path: str, diff_str: str) -> bool:
+            spinner_obj = _spinner_ref[0] if _spinner_ref else None
+            if spinner_obj and spinner_obj._active:
+                await spinner_obj.stop()
+            out()
+            out(_c(BOLD, YELLOW, f"  ⚠  Apply changes to {path}?"))
+            for line in diff_str.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    out(_c(GREEN, f"    {line}"))
+                elif line.startswith("-") and not line.startswith("---"):
+                    out(_c(RED, f"    {line}"))
+                elif line.startswith("@@"):
+                    out(_c(BLUE, f"    {line}"))
+                else:
+                    out(_c(DIM, f"    {line}"))
+            out()
+            try:
+                answer = await _ainput(_c(YELLOW, BOLD, "  Apply? [Y/n] ") + RESET)
+                return answer.strip().lower() not in ("n", "no")
+            except (EOFError, KeyboardInterrupt):
+                return False
+
+        # Decide confirm_fn:  approve_writes overrides no_confirm
+        _confirm_fn = (
+            _confirm_write
+            if (self.config.agent.approve_writes or not self.no_confirm)
+            else None
+        )
+        _plan_cfn = None  # plan_confirm_fn UI not yet implemented
+        if self.agent is None:
+            self.agent = Agent(
+                config=self.config,
+                workspace=self.workspace,
+                session=self.session,
+                session_store=self.session_store,
+                confirm_fn=_confirm_fn,
+                plan_confirm_fn=_plan_cfn,
+            )
+        else:
+            # Reuse existing agent across turns to preserve _context_shown_reads
+            # (prevents the model from re-reading files it already saw this session).
+            # Only refresh the per-turn callbacks in case settings changed.
+            self.agent.tools.confirm_fn = _confirm_fn
+            self.agent.plan_confirm_fn = _plan_cfn
+
+        # ── Interrupt+resume helper ────────────────────────────────────────
+        async def _check_interrupt(spinner: "_Spinner") -> bool:
+            """
+            Called after each event when the interrupt event is set.
+            Prompts the user for a correction or cancellation.
+            Returns True if the turn should be cancelled, False to resume.
+            """
+            if not self._interrupt_event.is_set():
+                return False
+            self._interrupt_event.clear()
+            if spinner._active:
+                await spinner.stop()
+            _flush_remaining_buf(interrupted=True)
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            out()
+            out(_c(YELLOW, DIM, "  Interrupted. Send a correction, or press Enter to cancel (Ctrl+C again to force-cancel):"))
+            # While waiting for the correction prompt, a second Ctrl+C should
+            # hard-cancel immediately.  Install a handler that raises
+            # KeyboardInterrupt so _ainput() is actually interrupted.
+            def _hard_cancel(sig, frame):
+                raise KeyboardInterrupt
+            signal.signal(signal.SIGINT, _hard_cancel)
+            try:
+                correction = await _ainput(_c(YELLOW, BOLD, "  ✎ ") + RESET)
+            except (EOFError, KeyboardInterrupt):
+                correction = ""
+            finally:
+                # Restore the soft event-based handler for the rest of the turn
+                signal.signal(signal.SIGINT, _sigint_handler)
+            if correction.strip():
+                self.agent.correction_queue.put_nowait(correction.strip())
+                out(_c(DIM, GREEN, f"  → Correction queued: {correction.strip()}"))
+                out()
+                return False  # resume
+            return True  # cancel
+
+        out(_c(BOLD, GREEN, f"nvagent  {_ts()}"))
+
+        spinner         = _Spinner()
+        _spinner_ref.append(spinner)  # expose to _confirm_write closure
+        in_think_run    = False
+        think_header_shown = False
+        tool_start_time: float = 0.0
+        _last_tool_name: list[str] = [""]   # track for smart preview
+        # Plan step tracking: id → last-seen status (to detect transitions)
+        _plan_states: dict[int, str] = {}
+
+        # ── Markdown line buffer (flushed on each \n in token stream) ─────
+        _line_buf:        list[str] = []
+        _in_fence:        list[bool] = [False]
+        _fence_lang:      list[str] = [""]
+        _last_flush_mono: list[float] = [0.0]   # throttled flush state (item 3)
+        _FLUSH_INTERVAL = 0.020                  # 20 ms — reduces syscall overhead
+
+        def _flush_token_line(trailing: str = "") -> None:
+            line_text = "".join(_line_buf)
+            _line_buf.clear()
+            # Suppress model meta-commentary lines (e.g. "[Used 1 tools: read_file]")
+            # that some models emit as free text rather than proper tool calls.
+            if _META_LINE_RE.match(line_text.strip()):
+                return
+            rendered = _render_line(line_text, _in_fence, _fence_lang)
+            sys.stdout.write(rendered + trailing + "\n")
+            # Batch flushes: only call flush() every _FLUSH_INTERVAL ms to avoid
+            # issuing a write(2) syscall per token line during high-throughput streaming.
+            # Always flush when there is a trailing marker (interrupted / end-of-message).
+            _now = time.monotonic()
+            if trailing or _now - _last_flush_mono[0] >= _FLUSH_INTERVAL:
+                sys.stdout.flush()
+                _last_flush_mono[0] = _now
+
+        def _flush_remaining_buf(interrupted: bool = False) -> None:
+            """Flush any partial line. If *interrupted* (mid-sentence before a tool
+            call or cancellation), append a dim '…' so the user can see the text
+            was not silently dropped — the model simply stopped mid-word."""
+            if _line_buf:
+                marker = _c(DIM, GRAY, "…") if interrupted else ""
+                _flush_token_line(trailing=marker)
+
+        # ── Restore SIGINT at end of stream ───────────────────────────────
+        async def _finish():
+            signal.signal(signal.SIGINT, _orig_sigint)
+
+        def _begin_think_run() -> None:
+            nonlocal in_think_run, think_header_shown
+            if not in_think_run:
+                if not think_header_shown:
+                    sys.stdout.write(f"\n  {DIM}{VIOLET}◌ thinking…{RESET}\n  {DIM}{VIOLET}")
+                    think_header_shown = True
+                else:
+                    sys.stdout.write(f"  {DIM}{VIOLET}")
+                in_think_run = True
+
+        def _end_think_run(newline: bool = True) -> None:
+            nonlocal in_think_run, think_header_shown
+            if in_think_run:
+                sys.stdout.write(RESET)
+                if newline:
+                    sys.stdout.write("\n")
+                in_think_run = False
+            think_header_shown = False
+            sys.stdout.flush()
+
+        spinner.start("thinking…")
+        _spinner_stopped   = False   # track whether spinner has been stopped already
+        _spin_start_time   = time.monotonic()  # wall time when "thinking…" spinner started
+        _first_token_shown: list[bool] = [False]  # shown FTL banner once per turn
+        # Reset spinner-stopped flag whenever a new "thinking" status arrives
+        # so multi-turn sessions always stop the spinner in the done handler.
+        _think_flush_buf:   list[str]  = []         # coalesced think_token write buffer
+        _think_last_flush:  list[float] = [0.0]     # last flush monotonic for throttle
+        # Think-collapse: after _THINK_MAX_LINES newlines switch to a compact
+        # one-line status instead of flooding the terminal with reasoning text.
+        _THINK_MAX_LINES      = 8      # render this many think lines then collapse
+        _THINK_HEARTBEAT_SECS = 8.0    # re-print progress line every N seconds in collapse mode
+        _think_lines_rendered: list[int]   = [0]
+        _think_collapsed:      list[bool]  = [False]
+        _think_total_chars:    list[int]   = [0]
+        _think_heartbeat_ts:   list[float] = [0.0]
+
+        async def _run_agent_loop() -> None:
+            """Inner coroutine run as a Task so it can be hard-cancelled."""
+            nonlocal _spinner_stopped, _spin_start_time
+            try:
+                async for event in self.agent.run(message):
+                    # Check for mid-turn interrupt after every event
+                    if self._interrupt_event.is_set():
+                        should_cancel = await _check_interrupt(spinner)
+                        if should_cancel:
+                            if self.agent:
+                                self.agent.cancel()
+                            raise asyncio.CancelledError
+
+                    if event.type == "think_token":
+                        # Stop spinner only once per sub-turn — on the very first think token.
+                        if not _spinner_stopped:
+                            if spinner._active:
+                                await spinner.stop()
+                            _spinner_stopped = True
+                        chunk = event.data
+                        _think_total_chars[0] += len(chunk)
+
+                        # ── Collapse mode: reasoning exceeded _THINK_MAX_LINES ──
+                        if _think_collapsed[0]:
+                            # Update spinner label with live char count
+                            spinner.update(
+                                f"thinking… ({_think_total_chars[0] // 1000}k chars)"
+                            )
+                            if not spinner._active:
+                                spinner.start(
+                                    f"thinking… ({_think_total_chars[0] // 1000}k chars)"
+                                )
+                            # Periodic heartbeat so user knows it's still alive
+                            _now_t = time.monotonic()
+                            if _now_t - _think_heartbeat_ts[0] >= _THINK_HEARTBEAT_SECS:
+                                elapsed = _now_t - _spin_start_time
+                                if spinner._active:
+                                    await spinner.stop()
+                                sys.stdout.write(
+                                    f"  {DIM}{VIOLET}⋯ reasoning  "
+                                    f"{elapsed:.0f}s · {_think_total_chars[0]:,} chars"
+                                    f"{RESET}\n"
+                                )
+                                sys.stdout.flush()
+                                spinner.start(
+                                    f"thinking… ({_think_total_chars[0] // 1000}k chars)"
+                                )
+                                _think_heartbeat_ts[0] = _now_t
+                            continue
+
+                        # ── Normal mode: batch think_token writes ──────────────
+                        # Batch think_token writes (item #2): accumulate into
+                        # _think_flush_buf and flush to stdout at most once per
+                        # _FLUSH_INTERVAL (same 20ms gate used for response tokens).
+                        # Eliminates 50+ write(2) syscalls/sec during long think phases.
+                        if "\n" in chunk:
+                            parts = chunk.split("\n")
+                            for i, part in enumerate(parts):
+                                if part:
+                                    _begin_think_run()
+                                    _think_flush_buf.append(part)
+                                if i < len(parts) - 1:
+                                    _think_flush_buf.append(RESET + "\n  " + DIM + VIOLET)
+                                    _think_lines_rendered[0] += 1
+                            # Newline = good flush boundary
+                            _now_t = time.monotonic()
+                            sys.stdout.write("".join(_think_flush_buf))
+                            sys.stdout.flush()
+                            _think_flush_buf.clear()
+                            _think_last_flush[0] = _now_t
+                        else:
+                            _begin_think_run()
+                            _think_flush_buf.append(chunk)
+                            _now_t = time.monotonic()
+                            if _now_t - _think_last_flush[0] >= _FLUSH_INTERVAL:
+                                sys.stdout.write("".join(_think_flush_buf))
+                                sys.stdout.flush()
+                                _think_flush_buf.clear()
+                                _think_last_flush[0] = _now_t
+
+                        # ── Enter collapse mode once line budget is exhausted ──
+                        if _think_lines_rendered[0] >= _THINK_MAX_LINES:
+                            # Flush any pending buffer cleanly before collapsing
+                            if _think_flush_buf:
+                                sys.stdout.write("".join(_think_flush_buf))
+                                _think_flush_buf.clear()
+                            _end_think_run(newline=True)
+                            elapsed = time.monotonic() - _spin_start_time
+                            sys.stdout.write(
+                                f"  {DIM}{VIOLET}⋯ [reasoning continues… "
+                                f"{_think_total_chars[0]:,} chars so far]{RESET}\n"
+                            )
+                            sys.stdout.flush()
+                            _think_collapsed[0] = True
+                            _think_heartbeat_ts[0] = time.monotonic()
+                            spinner.start(
+                                f"thinking… ({_think_total_chars[0] // 1000}k chars)"
+                            )
+
+                    elif event.type == "token":
+                        # First real token: stop spinner, end any think run
+                        if not _spinner_stopped:
+                            if spinner._active:
+                                await spinner.stop()
+                            _spinner_stopped = True
+                        if in_think_run:
+                            # Flush any buffered think tokens before closing the block
+                            if _think_flush_buf:
+                                sys.stdout.write("".join(_think_flush_buf))
+                                _think_flush_buf.clear()
+                            _end_think_run(newline=True)
+                        # Show first-token latency once per turn (item 13)
+                        if not _first_token_shown[0]:
+                            _first_token_shown[0] = True
+                            _ftl = time.monotonic() - _spin_start_time
+                            sys.stdout.write(
+                                f"  {DIM}{GRAY}↑ {_ftl:.1f}s to first token{RESET}\n"
+                            )
+                            sys.stdout.flush()
+                        # Live token counter in spinner (item 12)
+                        spinner.add_tokens()
+                        # Buffer tokens by line for markdown rendering.
+                        # Use str.split('\n') instead of iterating char-by-char:
+                        # for a 50-word chunk this reduces Python-level iterations
+                        # from ~250 to ~5, which matters when the model sends many
+                        # large bulk chunks.
+                        data = event.data
+                        if "\n" not in data:
+                            _line_buf.append(data)
+                        else:
+                            segments = data.split("\n")
+                            # All segments except the last end with an implicit \n
+                            for seg in segments[:-1]:
+                                if seg:
+                                    _line_buf.append(seg)
+                                _flush_token_line()
+                            # Last segment has no trailing newline — buffer it
+                            if segments[-1]:
+                                _line_buf.append(segments[-1])
+
+                    elif event.type == "tool_start":
+                        await spinner.stop()
+                        _flush_remaining_buf(interrupted=True)
+                        _end_think_run()
+                        name     = event.data["name"]
+                        args_str = _fmt_args(name, event.data["args"])
+                        _last_tool_name[0] = name
+                        out()
+                        out(_c(ORANGE, f"  ⏺ {name}") + _c(DIM, ORANGE, f"({args_str})"))
+                        tool_start_time = time.monotonic()
+                        spinner.start(f"{name}…")
+                        _spinner_stopped = False
+
+                    elif event.type == "tool_result":
+                        await spinner.stop()
+                        result      = event.data.get("result", "")
+                        elapsed     = time.monotonic() - tool_start_time
+                        elapsed_str = _c(DIM, GRAY, f"  {elapsed:.1f}s") if elapsed >= 0.3 else ""
+                        # Persist for /expand
+                        self._last_tool_result = result
+                        self._last_tool_name_for_expand = _last_tool_name[0]
+                        # Dry-run results get yellow text to stand out
+                        if result.startswith("[DRY RUN]"):
+                            first_line = result.splitlines()[0] if result else ""
+                            out(_c(DIM, YELLOW, f"    {first_line}") + elapsed_str)
+                        else:
+                            preview = _smart_preview(_last_tool_name[0], result)
+                            out(_c(GRAY, f"    {preview}") + _c(DIM, GRAY, "  /expand") + elapsed_str)
+
+                    elif event.type == "status":
+                        msg = str(event.data)
+                        if msg.startswith("thinking"):
+                            # Each new "thinking" status = a new LLM sub-turn.
+                            # Always reset _spinner_stopped so the done handler
+                            # calls spinner.stop() and clears the line properly.
+                            _spinner_stopped = False
+                            _first_token_shown[0] = False  # reset FTL banner for new turn
+                            _spin_start_time = time.monotonic()
+                            # Reset think-collapse state for the new sub-turn
+                            _think_lines_rendered[0] = 0
+                            _think_collapsed[0] = False
+                            _think_total_chars[0] = 0
+                            _think_heartbeat_ts[0] = 0.0
+                            if not spinner._active:
+                                # Show model + task type if included: "thinking  [model  TASK]"
+                                _spin_label = msg if len(msg) > 9 else "thinking…"
+                                spinner.start(_spin_label)
+                        elif msg == "streaming":
+                            spinner.update("streaming…")
+                        elif msg.startswith("Retrying"):
+                            spinner.update(msg)
+                        elif msg.startswith("Compacting"):
+                            spinner.update("compacting context…")
+                        elif msg.startswith("Correction injected"):
+                            spinner.start("thinking…")
+                            _spinner_stopped = False
+                        elif msg.startswith("Git checkpoint"):
+                            spinner.update(msg[:50])
+                        elif msg.startswith("⏱"):
+                            if msg.startswith("⏱ think"):
+                                # Print think-phase summary as a persistent line.
+                                # Must end the think run first so the cursor is on
+                                # a clean new line; without this, out() appends
+                                # directly to the last think token, merging lines.
+                                if spinner._active:
+                                    await spinner.stop()
+                                _spinner_stopped = True
+                                _end_think_run()   # flushes RESET+\n, clears in_think_run
+                                out(_c(DIM, GRAY, f"  {msg}"))
+                            # else: all other ⏱ timing events (pre-LLM, retrieval,
+                            # context, git, api-connect, api-first-chunk) are already
+                            # written to perf.log — silently drop them here; pushing
+                            # them to spinner.update() garbles the display because
+                            # \r-based redraws mis-track visible width with ANSI codes.
+                        elif msg.startswith("[DRY RUN]"):
+                            pass   # already shown in header; suppress status noise
+                        elif msg.startswith("Plan") and "modified" in msg:
+                            spinner.update("plan modified…")
+                        elif msg.startswith("[truncated]"):
+                            # Make truncation visible — spinner updates are ephemeral
+                            await spinner.stop()
+                            _flush_remaining_buf(interrupted=True)
+                            _end_think_run()
+                            out(_c(DIM, YELLOW, f"  ⚠  {msg}"))
+                            spinner.start("continuing…")
+                            _spinner_stopped = False
+                        elif msg.startswith("Continuing") or msg.startswith("[stuck]"):
+                            spinner.update(msg[:60] + "…")
+                        # suppress other status noise
+
+                    elif event.type == "error":
+                        await spinner.stop()
+                        _flush_remaining_buf(interrupted=True)
+                        _end_think_run()
+                        msg = (
+                            # Use 'or' so an empty-string message falls back to
+                            # the full dict repr rather than showing "✗ Error:  "
+                            (event.data.get("message") or str(event.data))
+                            if isinstance(event.data, dict) else str(event.data)
+                        )
+                        out()
+                        out(_c(BRED, f"  ✗ Error: {msg}"))
+
+                    elif event.type == "files_changed":
+                        files = event.data if isinstance(event.data, list) else []
+                        if files:
+                            await spinner.stop()
+                            _flush_remaining_buf()
+                            _end_think_run()
+                            prefix = _c(DIM, YELLOW, "  [✎ DRY RUN]") if self.config.agent.dry_run else _c(DIM, ORANGE, "  ✎ ")
+                            out(prefix + _c(DIM, ORANGE, " Modified: " + "  ".join(files)))
+
+                    elif event.type == "plan":
+                        # Show the full task plan once at the start
+                        await spinner.stop()
+                        _flush_remaining_buf()
+                        _end_think_run()
+                        d     = event.data if isinstance(event.data, dict) else {}
+                        steps = d.get("steps", [])
+                        task  = d.get("task", "")
+                        if steps:
+                            _icon = {"pending": "○", "active": "◉", "done": "✓",
+                                     "failed": "✗", "skipped": "⊘"}
+                            _sc   = {"pending": GRAY, "active": BLUE,
+                                     "done": GREEN, "failed": RED, "skipped": GRAY}
+                            out()
+                            out(_c(BOLD, BLUE, "  ≡ Plan") + _c(DIM, GRAY, f"  {task[:60]}"))
+                            for s in steps:
+                                st   = s.get("status", "pending")
+                                ico  = _icon.get(st, "○")
+                                col  = _sc.get(st, GRAY)
+                                hint = _c(DIM, GRAY, f"  → {s['tool_hint']}") if s.get("tool_hint") else ""
+                                out(_c(col, f"    {ico} {s['id']}. {s['title']}") + hint)
+                                _plan_states[s["id"]] = st
+                            out()
+                        spinner.start("thinking…")
+                        _spinner_stopped = False
+
+                    elif event.type == "plan_update":
+                        # Print a one-liner when a step transitions to done or failed
+                        d     = event.data if isinstance(event.data, dict) else {}
+                        steps = d.get("steps", [])
+                        prog  = d.get("progress", "")
+                        for s in steps:
+                            sid  = s.get("id", 0)
+                            st   = s.get("status", "")
+                            prev = _plan_states.get(sid, "")
+                            if st != prev:
+                                _plan_states[sid] = st
+                                if st == "done":
+                                    out(_c(DIM, GREEN, f"    ✓ {s['title']}") +
+                                        _c(DIM, GRAY,  f"  ({prog})"))
+                                elif st == "failed":
+                                    out(_c(DIM, RED, f"    ✗ {s['title']} failed") +
+                                        _c(DIM, GRAY, f"  ({prog})"))
+                                elif st == "active":
+                                    out(_c(DIM, BLUE, f"    ◉ {s['title']}"))
+
+                    elif event.type == "reflection":
+                        # Self-reflection after repeated failures
+                        await spinner.stop()
+                        _flush_remaining_buf()
+                        _end_think_run()
+                        text = str(event.data)
+                        out()
+                        out(_c(BOLD, YELLOW, "  ⟳ Recovery reflection:"))
+                        for line in text.splitlines():
+                            if line.strip():
+                                out(_c(DIM, YELLOW, f"    {line}"))
+                        out()
+                        spinner.start("retrying…")
+                        _spinner_stopped = False
+
+                    elif event.type == "safety_violation":
+                        await spinner.stop()
+                        _flush_remaining_buf()
+                        _end_think_run()
+                        d = event.data if isinstance(event.data, dict) else {}
+                        kind  = d.get("kind", "?")
+                        msg   = d.get("message", str(event.data))
+                        fatal = d.get("fatal", False)
+                        out()
+                        if fatal:
+                            out(_c(BOLD, BRED, f"  ✗ Safety [{kind}]:"))
+                            for line in msg.splitlines():
+                                if line.strip():
+                                    out(_c(BRED, f"    {line}"))
+                        else:
+                            out(_c(BOLD, YELLOW, f"  ⚠ Safety [{kind}]:"))
+                            for line in msg.splitlines():
+                                if line.strip():
+                                    out(_c(DIM, YELLOW, f"    {line}"))
+                        out()
+                        if not fatal:
+                            spinner.start("continuing…")
+                        _spinner_stopped = False
+
+                    elif event.type == "done":
+                        await spinner.stop()
+                        _flush_remaining_buf()
+                        _end_think_run()
+                        d       = event.data if isinstance(event.data, dict) else {}
+                        tokens  = d.get("tokens_used", 0)
+                        total   = d.get("total_tokens", tokens)
+                        turns   = d.get("turns", 0)
+                        cost    = d.get("cost_usd", 0.0)
+                        files   = d.get("files_changed", [])
+                        sys.stdout.write("\n")
+                        cost_str  = _c(DIM, f"  ·  ~${cost:.4f}") if cost else ""
+                        total_str = _c(DIM, f"  ·  {total:,} session tokens") if total != tokens else ""
+                        dry_note  = _c(YELLOW, "  ·  DRY RUN (no files changed)") if self.config.agent.dry_run else ""
+                        out(_c(DIM, GREEN,
+                              f"  ✓  {turns} turn{'s' if turns != 1 else ''}"
+                              f"  ·  ~{tokens:,} tokens")
+                            + total_str + cost_str + dry_note)
+                        if files and not self.config.agent.dry_run:
+                            out(_c(DIM, ORANGE, "  ✎  " + "  ".join(files)))
+                        elif files and self.config.agent.dry_run:
+                            out(_c(DIM, YELLOW, "  [✎ DRY RUN] Would have changed: " + "  ".join(files)))
+                        # ── Context usage bar ─────────────────────────────
+                        max_tok = self.config.agent.max_tokens
+                        if max_tok > 0 and total > 0:
+                            frac      = min(total / max_tok, 1.0)
+                            bar_width = 24
+                            filled    = int(frac * bar_width)
+                            bar       = "█" * filled + "░" * (bar_width - filled)
+                            pct       = int(frac * 100)
+                            bar_col   = RED if frac > 0.85 else YELLOW if frac > 0.65 else DIM
+                            out(_c(bar_col, f"  context  {bar}  {total:,} / {max_tok:,} ({pct}%)"))
+
+                # Flush any partial last line
+                _flush_remaining_buf()
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                out()
+
+            except asyncio.CancelledError:
+                await spinner.stop()
+                _flush_remaining_buf(interrupted=True)
+                _end_think_run()
+                if self._interrupt_event.is_set():
+                    self._interrupt_event.clear()
+                    out()
+                    out(_c(YELLOW, DIM, "  Interrupted. Send a correction, or press Enter to cancel (Ctrl+C again to force-cancel):"))
+                    def _hard_cancel2(sig, frame):
+                        raise KeyboardInterrupt
+                    signal.signal(signal.SIGINT, _hard_cancel2)
+                    try:
+                        correction = await _ainput(_c(YELLOW, BOLD, "  ✎ ") + RESET)
+                    except (EOFError, KeyboardInterrupt):
+                        correction = ""
+                    finally:
+                        signal.signal(signal.SIGINT, _sigint_handler)
+                    if correction.strip():
+                        out(_c(DIM, GREEN, f"  → Correction queued: {correction.strip()}"))
+                        out(_c(DIM, GRAY, "  Re-sending with correction…"))
+                        out()
+                        # Deliver the combined message as a new turn
+                        self._pending_correction = message + "\n\n" + correction.strip()
+                        return  # return cleanly — outer _run_loop picks up _pending_correction
+                out()
+                out(_c(YELLOW, "  ✗ Cancelled."))
+                raise  # re-raise so the outer task.cancel() propagates cleanly
+            except Exception as exc:
+                await spinner.stop()
+                _flush_remaining_buf()
+                _end_think_run()
+                out()
+                out(_c(BRED, f"  ✗ {exc}"))
+                out(_c(DIM, RED, traceback.format_exc()))
+
+        agent_task = asyncio.create_task(_run_agent_loop())
+        _agent_task_ref.append(agent_task)
+        try:
+            await agent_task
+        except asyncio.CancelledError:
+            # Hard-cancelled by second Ctrl+C — set agent flag in case not already set
+            if self.agent:
+                self.agent.cancel()
+            # Display is already handled inside _run_agent_loop's except block
+
+        await _finish()
+        out()
+
+    async def run(self) -> None:
+        self._print_header()
+        self._watcher.start()
+
+        try:
+            await self._run_loop()
+        finally:
+            await self._watcher.stop()
+
+    async def _run_loop(self) -> None:
+        """Main input loop — separated so _watcher lifetime is managed by run()."""
+
+        while True:
+            # ── Pending correction from a previous Ctrl+C interrupt ────────
+            if self._pending_correction:
+                raw = self._pending_correction
+                self._pending_correction = None
+            else:
+                # ── Collect input (multiline-aware) ────────────────────────
+                try:
+                    raw = await _ainput(_c(BOLD, GREEN, "❯ ") + RESET, use_readline=True)
+                except (EOFError, KeyboardInterrupt):
+                    out()
+                    out(_c(DIM, "Bye."))
+                    break
+
+            # ── Backslash continuation:  end line with \ to keep typing ────
+            while raw.endswith("\\"):
+                raw = raw[:-1]          # strip trailing backslash
+                try:
+                    cont = await _ainput(_c(DIM, "… ") + RESET)
+                except (EOFError, KeyboardInterrupt):
+                    break
+                raw = raw + "\n" + cont
+
+            # ── Triple-quote paste mode:  type \"\"\" alone to open ──────────
+            if raw.strip() == '"""':
+                out(_c(DIM, GRAY, '  Paste mode — type """ on its own line to finish'))
+                lines: list[str] = []
+                while True:
+                    try:
+                        pline = await _ainput(_c(DIM, "  … ") + RESET)
+                    except (EOFError, KeyboardInterrupt):
+                        break
+                    if pline.strip() == '"""':
+                        break
+                    lines.append(pline)
+                raw = "\n".join(lines)
+
+            line = raw.strip()
+
+            # ── Empty input ────────────────────────────────────────────────
+            if not line:
+                continue
+
+            # ── Prefix completion for / commands ───────────────────────────
+            if line.startswith("/"):
+                expanded = _complete_command(line)
+                if expanded:
+                    out(_c(DIM, f"  → {expanded}"))
+                    line = expanded
+                elif line not in _COMMANDS:
+                    # Unknown command — show possible matches or error
+                    matches = [c for c in _COMMANDS if c.startswith(line)]
+                    if matches:
+                        out(_c(DIM, GRAY, "  Ambiguous — did you mean: " + "  ".join(matches)))
+                    else:
+                        out(_c(DIM, RED, f"  Unknown command: {line}   (type /help for list)"))
+                    out()
+                    continue
+
+            # ── Built-in commands ──────────────────────────────────────────
+            if line in ("/quit", "/exit", "/q"):
+                out(_c(DIM, "Bye."))
+                break
+
+            if line in ("/new", "/n"):
+                self.session = self.session_store.create_session(str(self.workspace))
+                # Reset agent so next turn gets a fresh one attached to new session
+                self.agent = None
+                out(_c(DIM, GREEN, f"  New session #{self.session.id}"))
+                out()
+                continue
+
+            if line in ("/clear", "/cls"):
+                os.system("clear")
+                self._print_header()
+                continue
+
+            if line in ("/undo",):
+                if self.agent and hasattr(self.agent, "tools"):
+                    result = await self.agent.tools.undo_last_turn()
+                    out(_c(YELLOW, f"  {result}"))
+                else:
+                    out(_c(DIM, "  No changes to undo."))
+                out()
+                continue
+
+            if line in ("/compact",):
+                out(_c(DIM, VIOLET, "  Compacting conversation history…"))
+                # Reuse existing agent or spin up a temporary one
+                agent_for_compact = self.agent or Agent(
+                    config=self.config,
+                    workspace=self.workspace,
+                    session=self.session,
+                    session_store=self.session_store,
+                )
+                result = await agent_for_compact.compact()
+                out(_c(DIM, GREEN, f"  ✓ {result}"))
+                out()
+                continue
+
+            if line.startswith("/model"):
+                # /model            → interactive arrow-key menu
+                # /model <name>     → switch directly by model ID
+                from nvagent.config import SUPPORTED_MODELS
+                parts = line.split(None, 1)
+                if len(parts) == 1:
+                    # ── Arrow-key picker ──────────────────────────────────
+                    out()
+                    try:
+                        chosen = await _arrow_menu(
+                            "Switch model",
+                            SUPPORTED_MODELS,
+                            current=self.config.models.default,
+                        )
+                    except (EOFError, KeyboardInterrupt):
+                        out()
+                        continue
+                    if chosen is None:
+                        out(_c(DIM, "  Cancelled."))
+                        out()
+                        continue
+                    new_model = chosen
+                else:
+                    new_model = parts[1].strip()
+
+                if new_model == self.config.models.default:
+                    out(_c(DIM, f"  Already using {new_model}"))
+                else:
+                    self.config.models.default = new_model
+                    self.config.models.fast = new_model
+                    self.config.models.code = new_model
+                    self.agent = None  # recreate agent next turn with new model
+                    try:
+                        from nvagent.config import save_config
+                        save_config(self.config, self.workspace)
+                        out(_c(DIM, GREEN, f"  ✓ Switched to {new_model}  (saved to .nvagent/config.toml)"))
+                    except Exception as _save_err:
+                        out(_c(DIM, GREEN, f"  ✓ Switched to {new_model}"))
+                        out(_c(RED, f"  ⚠ Could not save config: {_save_err}"))
+                out()
+                continue
+
+            if line in ("/cost",):
+                agent_for_cost = self.agent
+                if agent_for_cost:
+                    total = getattr(agent_for_cost, "_total_tokens", 0)
+                    cost  = total * 0.0000008  # rough blended estimate
+                    out(_c(BOLD, GREEN, "  Session cost estimate"))
+                    out(f"  {_c(GRAY, 'Tokens:')}  ~{total:,}")
+                    out(f"  {_c(GRAY, 'Cost:  ')}  ~${cost:.4f}")
+                    out(_c(DIM, "  (estimate based on blended rate; actual cost may differ)"))
+                else:
+                    out(_c(DIM, "  No agent activity yet."))
+                out()
+                continue
+
+            if line in ("/files",):
+                from nvagent.core.context import extract_active_files
+                active = extract_active_files(self.session.messages, self.workspace)
+                if active:
+                    out(_c(BOLD, GREEN, f"  Tracked files ({len(active)})"))
+                    for p in active:
+                        try:
+                            rel = p.relative_to(self.workspace)
+                        except ValueError:
+                            rel = p
+                        out(f"  {_c(GRAY, '·')}  {_c(WHITE, str(rel))}")
+                else:
+                    out(_c(DIM, "  No files tracked yet."))
+                out()
+                continue
+
+            if line in ("/status",):
+                branch, git_status = _git_info(self.workspace)
+                n_msgs = sum(1 for m in self.session.messages if m["role"] == "user")
+                n_total_msgs = len(self.session.messages)
+                from nvagent.core.index import get_workspace_index
+                idx = get_workspace_index(self.workspace)
+                idx_stats = idx.stats()
+                out(_c(BOLD, GREEN, "  Status"))
+                out(f"  {_c(GRAY, 'Workspace: ')}  {_c(WHITE, str(self.workspace))}")
+                if branch:
+                    out(f"  {_c(GRAY, 'Git:       ')}  {_c(WHITE, branch)}  {_c(DIM, git_status)}")
+                out(f"  {_c(GRAY, 'Model:     ')}  {_c(WHITE, self.config.models.default)}")
+                out(f"  {_c(GRAY, 'Session:   ')}  #{self.session.id}  ·  {n_msgs} exchanges  ·  {n_total_msgs} messages")
+                out(f"  {_c(GRAY, 'Index:     ')}  {_c(DIM, idx_stats)}")
+                if self.agent:
+                    total = getattr(self.agent, "_total_tokens", 0)
+                    out(f"  {_c(GRAY, 'Tokens:    ')}  ~{total:,}")
+                out()
+                continue
+
+            if line in ("/help", "/?"):
+                cols = _cols()
+                out(_c(BOLD, GREEN, "  Commands"))
+                no_c = "  (--no-confirm active)" if self.no_confirm else ""
+                cmds = [
+                    ("/new          ", "start a new session"),
+                    ("/clear        ", "clear the screen"),
+                    ("/undo         ", "undo last agent file changes"),
+                    ("/expand       ", "print the full output of the last tool call"),
+                    ("/compact      ", "summarise + compress conversation history"),
+                    ("/model [name] ", "interactive model picker (or switch by name)"),
+                    ("/cost         ", "show running token cost for this session"),
+                    ("/files        ", "list files currently tracked by the agent"),
+                    ("/status       ", "show session stats (model, tokens, git)"),
+                    ("/quit         ", "exit nvagent"),
+                ]
+                out()
+                out(_c(DIM, GRAY, "  Mention syntax:"))
+                out(f"  {_c(GRAY, '@<path>       ')}  {_c(DIM, 'inject file contents inline  e.g. @src/main.py')}")
+                out(f"  {_c(GRAY, '/expand       ')}  {_c(DIM, 'also shown as hint after each tool result')}")
+                out()
+                for cmd, desc in cmds:
+                    out(f"  {_c(ORANGE, cmd)}  {_c(DIM, desc)}")
+                out()
+                out(_c(DIM, GRAY, "  Input modes:"))
+                out(f"  {_c(GRAY, 'Ctrl+C        ')}  {_c(DIM, 'interrupt agent — prompts for correction or cancel')}")
+                out(f"  {_c(GRAY, chr(92) + '<Enter>      ')}  {_c(DIM, 'backslash continuation (multiline)')}")
+                out(f"  {_c(GRAY, '\"\"\"<Enter>    ')}  {_c(DIM, 'paste mode — end with \"\"\" on its own line')}")
+                if no_c:
+                    out(_c(DIM, YELLOW, f"  {no_c}"))
+                out()
+                continue
+
+            # ── /expand: print full last tool result ──────────────────────
+            if line in ("/expand",):
+                if self._last_tool_result:
+                    tool_label = self._last_tool_name_for_expand or "tool"
+                    n = len(self._last_tool_result.splitlines())
+                    out(_c(BOLD, GREEN, f"  Last result: {tool_label}") + _c(DIM, GRAY, f"  ({n} lines)"))
+                    out(_c(DIM, "─" * min(_cols() - 2, 80)))
+                    for rline in self._last_tool_result.splitlines():
+                        out(_c(GRAY, f"  {rline}"))
+                    out(_c(DIM, "─" * min(_cols() - 2, 80)))
+                else:
+                    out(_c(DIM, "  No tool result to expand."))
+                out()
+                continue
+
+            # ── @file mention expansion ────────────────────────────────────
+            if "@" in line:
+                expanded_line, resolved = _expand_at_mentions(line, self.workspace)
+                if resolved:
+                    for r in resolved:
+                        out(_c(DIM, GREEN, f"  ↳  @{r} → injecting file contents"))
+                    out()
+                    line = expanded_line
+
+            # ── Show file-watcher notifications ────────────────────────────
+            changed = self._watcher.pop_changed()
+            if changed:
+                names = "  ".join(p.name for p in changed[:6])
+                suffix = f"  (+{len(changed)-6} more)" if len(changed) > 6 else ""
+                out(_c(DIM, YELLOW, f"  ⟳  External changes detected: {names}{suffix}"))
+                out(_c(DIM, "     Context will be refreshed for this turn."))
+                out()
+                # Invalidate symbol index + dependency graph caches for changed files
+                try:
+                    from nvagent.core.index import get_workspace_index
+                    from nvagent.core.symbols import get_dependency_graph
+                    _idx = get_workspace_index(self.workspace)
+                    _gr  = get_dependency_graph(self.workspace)
+                    for _p in changed:
+                        _idx.invalidate(_p)
+                        _gr.invalidate(_p)
+                except Exception:
+                    pass
+
+            # ── User message ───────────────────────────────────────────────
+            out(_rule())
+            out(_c(BOLD, BLUE, f"You  {_ts()}"))
+            # Show multiline messages with indented continuation lines
+            for i, msg_line in enumerate(line.splitlines()):
+                prefix = "  " if i == 0 else "  ⋮ "
+                out(_c(WHITE, f"{prefix}{msg_line}"))
+            out()
+
+            # Run agent, handle Ctrl+C gracefully
+            task = asyncio.create_task(self._stream(line))
+            try:
+                await task
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                task.cancel()
+                if self.agent:
+                    self.agent.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                out()
+            except Exception as _exc:
+                # Unhandled exception from _stream — show it and continue the
+                # input loop rather than letting the process exit silently.
+                out()
+                out(_c(BRED, f"  ✗ Unexpected error: {_exc}"))
+                import traceback as _tb
+                out(_c(DIM, RED, _tb.format_exc()))
+
+            # Track active files for file watcher after each turn
+            if self.agent:
+                from nvagent.core.context import extract_active_files
+                active = extract_active_files(self.session.messages, self.workspace)
+                self._watcher.track(active)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point (called by cli.py)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def launch_tui(
+    workspace: Path,
+    config: Config,
+    session: Session,
+    session_store: SessionStore,
+    no_confirm: bool = False,
+) -> None:
+    repl = NVAgentREPL(
+        workspace=workspace,
+        config=config,
+        session=session,
+        session_store=session_store,
+        no_confirm=no_confirm,
+    )
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.set_default_executor(executor)
+
+    # Initialise readline for up/down arrow history, line editing, Ctrl+R search
+    _setup_readline()
+
+    # Background: warm the workspace symbol index (non-blocking).
+    # Use a daemon thread so Ctrl+C doesn't trigger the ThreadPoolExecutor
+    # atexit handler while the warmup is still running.
+    def _warm_index():
+        try:
+            from nvagent.core.index import get_workspace_index
+            idx = get_workspace_index(workspace)
+            n = idx.build(max_files=1000)
+            idx.save()
+        except Exception:
+            pass
+
+    threading.Thread(target=_warm_index, daemon=True, name="nvagent-warm-index").start()
+
+    try:
+        loop.run_until_complete(repl.run())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Cancel all remaining tasks (e.g. _FileWatcher._poll, any background
+        # coroutines) so they clean up before the loop is closed — this prevents
+        # the "Task was destroyed but it is pending!" warnings on Ctrl+C exit.
+        try:
+            pending = asyncio.all_tasks(loop)
+            if pending:
+                for _t in pending:
+                    _t.cancel()
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
+        sys.stdout.write(SHOW_CURSOR)
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        # Persist readline history so it survives across sessions
+        _save_readline_history()
+        try:
+            sys.stdin.close()
+        except Exception:
+            pass
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
+        try:
+            loop.close()
+        except Exception:
+            pass
+        # Skip ThreadPoolExecutor atexit hook racing with the KeyboardInterrupt
+        # signal. Everything meaningful (session save, readline history, cursor
+        # restore) is already done above.
+        os._exit(0)
+
