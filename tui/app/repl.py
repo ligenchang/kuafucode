@@ -1165,6 +1165,10 @@ class NVAgentREPL:
         _think_collapsed:      list[bool]  = [False]
         _think_total_chars:    list[int]   = [0]
         _think_heartbeat_ts:   list[float] = [0.0]
+        # Yield counter: force an asyncio yield every N chars during collapse so
+        # the spinner task's asyncio.sleep(0.08) can fire between hot-path chunks.
+        _THINK_YIELD_EVERY  = 800          # ~200 tokens; low enough to keep spinner smooth
+        _think_yield_chars:    list[int]   = [0]   # chars since last yield
 
         async def _run_agent_loop() -> None:
             """Inner coroutine run as a Task so it can be hard-cancelled."""
@@ -1214,6 +1218,15 @@ class NVAgentREPL:
                                     f"thinking… ({_think_total_chars[0] // 1000}k chars)"
                                 )
                                 _think_heartbeat_ts[0] = _now_t
+                                _think_yield_chars[0] = 0  # reset after heartbeat
+                            # Cooperative yield every _THINK_YIELD_EVERY chars so the
+                            # spinner task's asyncio.sleep(0.08) can actually fire.
+                            # Without this the tight loop starves the event loop and the
+                            # spinner frame never advances (appears "stuck").
+                            _think_yield_chars[0] += len(chunk)
+                            if _think_yield_chars[0] >= _THINK_YIELD_EVERY:
+                                _think_yield_chars[0] = 0
+                                await asyncio.sleep(0)
                             continue
 
                         # ── Normal mode: batch think_token writes ──────────────
