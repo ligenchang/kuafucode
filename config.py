@@ -18,6 +18,7 @@ SUPPORTED_MODELS: list[str] = [
     "minimaxai/minimax-m2.1",    # MiniMax M2.1 — long-context, reasoning
     "moonshotai/kimi-k2.5",      # Kimi K2.5 — fast MoE, tool-calling
     "z-ai/glm4.7",               # GLM-4.7 — fast thinking + tool-calling
+    "nvidia/nemotron-3-nano-30b-a3b",  # Nemotron-3-Nano 30B — efficient on-device
 ]
 
 
@@ -36,6 +37,7 @@ DEFAULT_CONFIG = """\
 #   minimaxai/minimax-m2.1       ← MiniMax M2.1 (long-context, reasoning)
 #   moonshotai/kimi-k2.5         ← Kimi K2.5 (fast MoE, tool-calling)
 #   z-ai/glm4.7                  ← GLM-4.7 (fast thinking + tool-calling)
+#   nvidia/nemotron-3-nano-30b-a3b ← Nemotron-3-Nano 30B (efficient, on-device)
 #
 # To enable MCP (Model Context Protocol) servers, add one or more [[mcp.servers]]
 # sections.  Example:
@@ -52,11 +54,11 @@ base_url = "https://integrate.api.nvidia.com/v1"
 
 [models]
 # Main model for complex coding tasks (must support tool/function calling)
-default = "qwen/qwen3.5-397b-a17b"
+default = "nvidia/nemotron-3-nano-30b-a3b"
 # Fast model for simple queries — can be the same as default
-fast = "qwen/qwen3.5-397b-a17b"
+fast = "nvidia/nemotron-3-nano-30b-a3b"
 # Code-specialized model — can be the same as default
-code = "qwen/qwen3.5-397b-a17b"
+code = "nvidia/nemotron-3-nano-30b-a3b"
 
 [agent]
 # Max tokens per LLM response (lower = faster, less truncation risk)
@@ -126,9 +128,9 @@ class ApiConfig:
 
 @dataclass
 class ModelsConfig:
-    default: str = "qwen/qwen3.5-397b-a17b"
-    fast: str    = "qwen/qwen3.5-397b-a17b"
-    code: str    = "qwen/qwen3.5-397b-a17b"
+    default: str = "nvidia/nemotron-3-nano-30b-a3b"
+    fast: str    = "nvidia/nemotron-3-nano-30b-a3b"
+    code: str    = "nvidia/nemotron-3-nano-30b-a3b"
 
 
 @dataclass

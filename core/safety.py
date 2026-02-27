@@ -142,16 +142,15 @@ class GitCheckpointer:
 
     async def checkpoint(self, message: str = "nvagent: pre-task checkpoint") -> Optional[str]:
         """
-        Stage all tracked changes and create a checkpoint commit.
-        Returns the commit SHA, or None if git is unavailable / repo is clean.
+        Create a checkpoint commit of all current changes without disturbing
+        the working tree.  Returns the commit SHA, or None if git is unavailable.
 
         Strategy:
-          1. If repo is clean → record HEAD as the checkpoint ref (no commit needed).
-          2. If there are staged/unstaged changes → stash them, note the stash ref.
-          3. If working tree has untracked files only → add + commit on a temp branch.
-
-        We always prefer a non-destructive approach (stash) over committing
-        things the user hasn't staged themselves.
+          1. If repo is clean → HEAD is already the safe point, return its SHA.
+          2. Otherwise → stage all changes and commit them on the current branch.
+             The working tree is NOT stashed or reset — the user's files are
+             left exactly as they are.  The commit just records the state so
+             /rollback can hard-reset back to it if needed.
         """
         if not self.is_git_repo():
             return None
@@ -159,27 +158,20 @@ class GitCheckpointer:
         dirty_files = self.uncommitted_files()
 
         if not dirty_files:
-            # Already clean — HEAD is our safe point
             sha = self.current_sha()
             self._checkpoint_ref = sha
             return sha
 
-        # Stash everything (tracked + untracked) to get a clean state
-        stash_out, _, rc = _git(
-            ["stash", "push", "--include-untracked", "-m", message],
-            self.workspace,
-        )
+        # Stage everything (tracked modifications + new untracked files)
+        _git(["add", "-A"], self.workspace)
+        # Commit — working tree is unchanged, we're just recording the snapshot
+        _, _, rc = _git(["commit", "-m", message, "--no-verify"], self.workspace)
         if rc == 0:
-            # Get the stash ref
-            ls_out, _, _ = _git(["stash", "list", "--format=%gd %gs"], self.workspace)
-            for line in ls_out.splitlines():
-                if message[:30] in line:
-                    self._stash_ref = line.split()[0]
-                    break
-            self._checkpoint_ref = self.current_sha()
-            return self._checkpoint_ref
+            sha = self.current_sha()
+            self._checkpoint_ref = sha
+            return sha
         else:
-            # Stash failed (e.g., conflicts) — just note HEAD
+            # Commit failed (e.g. nothing to commit after add) — use HEAD
             self._checkpoint_ref = self.current_sha()
             return self._checkpoint_ref
 
@@ -202,10 +194,6 @@ class GitCheckpointer:
 
         # Clean untracked files that the agent may have created
         _git(["clean", "-fd"], self.workspace)
-
-        # If we stashed, pop the stash to restore the original dirty state
-        if self._stash_ref:
-            _git(["stash", "pop"], self.workspace)
 
         return True, f"Restored to {target[:8]}."
 
