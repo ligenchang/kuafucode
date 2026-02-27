@@ -35,6 +35,40 @@ except ImportError:
 _HISTORY_FILE = Path.home() / ".nvagent" / "input_history"
 _MAX_HISTORY   = 1_000
 
+# ─────────────────────────────────────────────────────────────────────────────
+# prompt_toolkit — multi-line input (Alt+Enter inserts newline, Enter submits)
+# Falls back to readline/stdin if not available.
+# ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    from prompt_toolkit import PromptSession as _PTSession
+    from prompt_toolkit.key_binding import KeyBindings as _PTKeyBindings
+    from prompt_toolkit.history import FileHistory as _PTFileHistory
+    from prompt_toolkit.formatted_text import ANSI as _PTANSI
+    _PT_AVAILABLE = True
+except ImportError:
+    _PT_AVAILABLE = False  # type: ignore[assignment]
+
+_pt_session: "_PTSession | None" = None  # lazy singleton
+
+
+def _get_pt_session() -> "_PTSession":
+    """Return the shared PromptSession, creating it on first call."""
+    global _pt_session
+    if _pt_session is None:
+        kb = _PTKeyBindings()
+
+        @kb.add("escape", "enter")  # Alt+Enter / Esc+Enter → insert newline
+        def _insert_newline(event):  # type: ignore[misc]
+            event.app.current_buffer.newline()
+
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _pt_session = _PTSession(
+            key_bindings=kb,
+            history=_PTFileHistory(str(_HISTORY_FILE)),
+        )
+    return _pt_session
+
 
 def _setup_readline() -> None:
     """Initialise readline: load history file and configure sensible defaults."""
@@ -437,30 +471,49 @@ def _strip_ansi(s: str) -> str:
     return _ANSI_STRIP_RE.sub("", s)
 
 
+def _pt_continuation(width: int, line_number: int, is_soft_wrap: bool) -> "_PTANSI":  # type: ignore[type-arg]
+    """Prompt displayed for continuation lines in multi-line input."""
+    return _PTANSI("\033[2m… \033[0m")  # DIM "… "
+
+
 async def _ainput(prompt: str, *, use_readline: bool = False) -> str:
     """
     Non-blocking input that doesn't starve the event loop.
 
-    When *use_readline* is True (main ❯ prompt) calls Python's built-in
-    input() which readline hooks into, giving up/down arrow history, line
-    editing, and Ctrl+R reverse search — all for free.
+    When *use_readline* is True (main ❯ prompt):
+      - Uses prompt_toolkit when available: Enter submits, Alt+Enter (or
+        Esc+Enter) inserts a newline so multi-line messages can be composed
+        directly in the prompt.  History is persisted via FileHistory.
+      - Falls back to Python's built-in input() + readline for history and
+        line editing when prompt_toolkit is not installed.
 
-    For continuation / correction prompts (use_readline=False) falls back to
-    the fast sys.stdin.readline path so those prompts are unaffected.
+    For continuation / correction prompts (use_readline=False) uses the
+    fast sys.stdin.readline path.
     """
     loop = asyncio.get_event_loop()
-    if use_readline and _READLINE_AVAILABLE:
-        # input() hands off to readline which renders the prompt and manages
-        # the terminal raw state itself.  We must pass the prompt through
-        # _rl_prompt() so readline correctly counts the visible width of the
-        # ANSI-coloured prefix.
-        rl_prompt = _rl_prompt(prompt)
+
+    if use_readline and _PT_AVAILABLE:
+        # ── prompt_toolkit path: multi-line support + persistent history ──
+        session = _get_pt_session()
         try:
-            result: str = await loop.run_in_executor(None, input, rl_prompt)
+            result: str = await session.prompt_async(
+                _PTANSI(prompt),
+                prompt_continuation=_pt_continuation,
+            )
         except EOFError:
             raise
         return result
-    # Fast path for non-readline prompts (continuation / correction)
+
+    if use_readline and _READLINE_AVAILABLE:
+        # ── readline fallback: up/down arrow history, Ctrl+R search ──────
+        rl_prompt = _rl_prompt(prompt)
+        try:
+            result = await loop.run_in_executor(None, input, rl_prompt)
+        except EOFError:
+            raise
+        return result
+
+    # ── Fast path for non-readline prompts (continuation / correction) ───
     sys.stdout.write(prompt)
     sys.stdout.flush()
     return (await loop.run_in_executor(None, sys.stdin.readline)).rstrip("\n")
@@ -912,7 +965,7 @@ class NVAgentREPL:
         )
         out(
             _c(DIM, f"  {sess_str}  ·  {self.session.created_at[:16]}")
-            + _c(DIM, GRAY, "   Type /help for commands  ·  Ctrl+C to interrupt")
+            + _c(DIM, GRAY, "   /help for commands  ·  Ctrl+C to interrupt  ·  Alt+Enter for new line")
         )
         if self.session.messages:
             out(_c(DIM, YELLOW, f"  ↩  Resuming — {n_msgs} previous exchange{'s' if n_msgs != 1 else ''}"))
