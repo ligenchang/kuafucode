@@ -872,6 +872,19 @@ class NVAgentREPL:
         branch, _git_status = _git_info(self.workspace)
         git_str  = _c(DIM, f"  git:{branch}") if branch else ""
 
+        # Backend label — shown after model name so user always knows where inference runs
+        _base = self.config.api.base_url.lower()
+        if "ollama.com" in _base:
+            _backend = _c(DIM, BLUE, "ollama.com")
+        elif "localhost" in _base or "127.0.0.1" in _base:
+            _backend = _c(DIM, BLUE, "ollama:local")
+        elif "nvidia" in _base or "nim" in _base:
+            _backend = _c(DIM, GRAY, "nvidia nim")
+        else:
+            from urllib.parse import urlparse as _urlparse
+            _backend = _c(DIM, GRAY, _urlparse(self.config.api.base_url).netloc or self.config.api.base_url)
+        _backend_str = f"  {_backend}"
+
         # Mode / guard indicators — listed after the model name
         badge_parts: list[str] = []
         if self.config.agent.dry_run:
@@ -893,6 +906,7 @@ class NVAgentREPL:
         out(
             f"  {_c(BOLD, GREEN, 'nvagent')}"
             f"  {_c(DIM, GRAY, model)}"
+            f"{_backend_str}"
             f"  {_c(DIM, GRAY, str(self.workspace))}"
             f"{git_str}{badge_str}"
         )
