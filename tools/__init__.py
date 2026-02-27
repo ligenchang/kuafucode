@@ -91,12 +91,13 @@ class ToolExecutor:
         # ── Dispatch table ────────────────────────────────────────────────────
         self._dispatch: dict[str, object] = {
             # file
-            "read_file":       self._file.read_file,
-            "write_file":      self._file.write_file,
-            "write_files":     self._file.write_files,
-            "edit_file":       self._file.edit_file,
-            "delete_file":     self._file.delete_file,
-            "list_dir":        self._file.list_dir,
+            "read_file":           self._file.read_file,
+            "write_file":          self._file.write_file,
+            "write_files":         self._file.write_files,
+            "edit_file":           self._file.edit_file,
+            "delete_file":         self._file.delete_file,
+            "list_dir":            self._file.list_dir,
+            "str_replace_editor":  self._file.str_replace_editor,
             # search
             "search_code":     self._search.search_code,
             "find_symbol":     self._search.find_symbol,

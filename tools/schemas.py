@@ -368,6 +368,33 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "str_replace_editor",
+            "description": (
+                "Anthropic-compatible file editor. Supported commands:\n"
+                "  str_replace — replace old_str with new_str in an existing file (preferred for targeted edits)\n"
+                "  create/write — create or overwrite a file with new_str as contents\n"
+                "  view        — read a file or directory listing (optional view_range=[start,end])\n"
+                "  insert      — insert new_str after line insert_line\n"
+                "Prefer edit_file or write_file when working natively; use this only when your instinct "
+                "is to call str_replace_editor."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command":     {"type": "string",  "description": "Action: str_replace | create | write | view | insert | undo_edit"},
+                    "path":        {"type": "string",  "description": "Path to the file"},
+                    "old_str":     {"type": "string",  "description": "Exact text to find and replace (str_replace command)"},
+                    "new_str":     {"type": "string",  "description": "Replacement text, or full file content for create/write"},
+                    "view_range":  {"type": "array",   "items": {"type": "integer"}, "description": "[start_line, end_line] for view command"},
+                    "insert_line": {"type": "integer", "description": "Line number after which to insert new_str (insert command)"},
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "find_symbol",
             "description": (
                 "Search the workspace-wide symbol index for symbols matching a name or query. "

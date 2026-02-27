@@ -447,3 +447,68 @@ class FileHandler(BaseHandler):
                     lines.append(f"  {entry.name}{size_str}")
 
         return f"{dpath}/\n" + "\n".join(lines) if lines else f"{dpath}/ (empty)"
+
+    # ── str_replace_editor (Anthropic compatibility shim) ─────────────────────
+
+    async def str_replace_editor(
+        self,
+        command: str = "str_replace",
+        path: str = "",
+        old_str: str = "",
+        new_str: str = "",
+        view_range: Optional[list] = None,
+        insert_line: Optional[int] = None,
+    ) -> str:
+        """Compatibility shim for models that emit Anthropic-style str_replace_editor calls.
+
+        Maps to native nvagent tools:
+          view          → read_file (with optional start/end from view_range)
+          create/write  → write_file
+          str_replace   → edit_file with a single search/replace edit
+          insert        → edit_file: insert new_str after the line at insert_line
+          undo_edit     → undo_last_turn (not wired here, returns guidance)
+        """
+        cmd = command.lower()
+
+        if cmd in ("view",):
+            if not path:
+                return "Error: str_replace_editor(view) requires 'path'."
+            if view_range and len(view_range) == 2:
+                return await self.read_file(path, start_line=view_range[0], end_line=view_range[1])
+            return await self.read_file(path)
+
+        if cmd in ("create", "write"):
+            if not path:
+                return "Error: str_replace_editor(create) requires 'path'."
+            return await self.write_file(path, new_str)
+
+        if cmd in ("str_replace",):
+            if not path:
+                return "Error: str_replace_editor(str_replace) requires 'path'."
+            if not old_str:
+                # No old text → treat as full overwrite
+                return await self.write_file(path, new_str)
+            return await self.edit_file(path, [{"search": old_str, "replace": new_str}])
+
+        if cmd in ("insert",):
+            if not path:
+                return "Error: str_replace_editor(insert) requires 'path'."
+            if insert_line is None:
+                return "Error: str_replace_editor(insert) requires 'insert_line'."
+            fpath = self.ctx._resolve_path(path)
+            if not fpath.exists():
+                return f"Error: File not found: {fpath}"
+            loop = asyncio.get_event_loop()
+            lines = await loop.run_in_executor(
+                None, lambda: fpath.read_text(encoding="utf-8").splitlines(keepends=True)
+            )
+            idx = min(insert_line, len(lines))
+            insert_text = new_str if new_str.endswith("\n") else new_str + "\n"
+            lines.insert(idx, insert_text)
+            new_content = "".join(lines)
+            return await self.write_file(path, new_content)
+
+        if cmd in ("undo_edit",):
+            return "Use the 'undo_last_turn' tool to undo recent file edits."
+
+        return f"str_replace_editor: unknown command '{command}'. Supported: view, create, str_replace, insert."

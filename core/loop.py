@@ -159,14 +159,14 @@ def _classify_tool_error(name: str, result: str) -> Optional[str]:
     r_lower = result.lower()
     if "⏱" in result or "timed out" in r_lower:
         return "timeout"
-    if name == "edit_file":
+    if name in ("edit_file", "str_replace_editor"):
         # ambiguous: matched N times / multiple matches
         if _re.search(r"found \d+ (times?|matches?)", r_lower) or "multiple" in r_lower:
             return "ambiguous_edit"
         # not found
         if "not found" in r_lower or "no match" in r_lower or "could not find" in r_lower:
             return "edit_not_found"
-    if name in ("read_file", "write_file", "edit_file", "find_files", "delete_file"):
+    if name in ("read_file", "write_file", "edit_file", "str_replace_editor", "find_files", "delete_file"):
         if "no such file" in r_lower or "does not exist" in r_lower or (
             "not found" in r_lower and name != "edit_file"
         ):
@@ -1291,7 +1291,7 @@ class Agent:
                 # ── Post-write validation ─────────────────────────────────
                 if (
                     self.config.safety.validate_writes
-                    and name in ("write_file", "edit_file", "apply_patch")
+                    and name in ("write_file", "edit_file", "str_replace_editor", "apply_patch")
                     and not result.startswith("Error:")
                 ):
                     try:
@@ -1521,7 +1521,7 @@ class Agent:
                         # Determine if this batch plausibly completed the current step:
                         # 1. Step has a tool_hint — at least one call matches it
                         # 2. No tool_hint — any write/run/edit tool counts as progress
-                        _write_tools = {"write_file", "write_files", "edit_file", "apply_patch"}
+                        _write_tools = {"write_file", "write_files", "edit_file", "str_replace_editor", "apply_patch"}
                         _run_tools   = {"run_command", "run_tests", "run_formatter"}
                         _progress_tools = _write_tools | _run_tools
                         hint = getattr(step, "tool_hint", None) or ""
@@ -1538,7 +1538,7 @@ class Agent:
 
             # Mark that this batch wrote files so next call can be forced
             _batch_tool_names = {tc["name"] for tc in tool_calls_data}
-            if _batch_tool_names & {"write_file", "write_files", "edit_file", "apply_patch"}:
+            if _batch_tool_names & {"write_file", "write_files", "edit_file", "str_replace_editor", "apply_patch"}:
                 _prev_batch_wrote_files = True
 
             # Check for a mid-turn user correction
