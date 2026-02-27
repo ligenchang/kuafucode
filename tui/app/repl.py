@@ -43,7 +43,7 @@ _MAX_HISTORY   = 1_000
 try:
     from prompt_toolkit import PromptSession as _PTSession
     from prompt_toolkit.key_binding import KeyBindings as _PTKeyBindings
-    from prompt_toolkit.history import FileHistory as _PTFileHistory
+    from prompt_toolkit.history import InMemoryHistory as _PTInMemoryHistory
     from prompt_toolkit.formatted_text import ANSI as _PTANSI
     _PT_AVAILABLE = True
 except ImportError:
@@ -53,7 +53,14 @@ _pt_session: "_PTSession | None" = None  # lazy singleton
 
 
 def _get_pt_session() -> "_PTSession":
-    """Return the shared PromptSession, creating it on first call."""
+    """Return the shared PromptSession, creating it on first call.
+
+    Uses InMemoryHistory pre-populated from readline's already-decoded history
+    buffer.  The history file is in readline/libedit format (_HiStOrY_V2_ with
+    \\040-encoded spaces) which prompt_toolkit's FileHistory cannot read — so
+    we let readline parse the file (done in _setup_readline), then copy the
+    decoded entries into an InMemoryHistory that prompt_toolkit can use.
+    """
     global _pt_session
     if _pt_session is None:
         kb = _PTKeyBindings()
@@ -62,10 +69,25 @@ def _get_pt_session() -> "_PTSession":
         def _insert_newline(event):  # type: ignore[misc]
             event.app.current_buffer.newline()
 
-        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Build in-memory history from readline's already-loaded history buffer
+        # so that existing entries (stored in libedit/readline format) are
+        # visible when pressing Up arrow in the prompt_toolkit prompt.
+        mem_history = _PTInMemoryHistory()
+        if _READLINE_AVAILABLE and _readline:
+            try:
+                n = _readline.get_current_history_length()
+                # readline history is oldest-first; InMemoryHistory.append_string
+                # expects entries in submission order (oldest first too).
+                for i in range(1, n + 1):
+                    entry = _readline.get_history_item(i)
+                    if entry and entry.strip():
+                        mem_history.append_string(entry)
+            except Exception:
+                pass
+
         _pt_session = _PTSession(
             key_bindings=kb,
-            history=_PTFileHistory(str(_HISTORY_FILE)),
+            history=mem_history,
         )
     return _pt_session
 
@@ -502,6 +524,13 @@ async def _ainput(prompt: str, *, use_readline: bool = False) -> str:
             )
         except EOFError:
             raise
+        # Keep readline history in sync so _save_readline_history() persists
+        # entries that were submitted via prompt_toolkit.
+        if _READLINE_AVAILABLE and _readline and result.strip():
+            try:
+                _readline.add_history(result)
+            except Exception:
+                pass
         return result
 
     if use_readline and _READLINE_AVAILABLE:
