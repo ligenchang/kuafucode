@@ -909,8 +909,11 @@ class Agent:
                         _first_token_logged = True
                         _perf[f"llm_first_token_turn{turns}"] = time.monotonic() - _t_llm_call
                     if _t_think_start is None:
-                        _t_think_start = time.monotonic()
+                         _t_think_start = time.monotonic()
+                         yield AgentEvent(type="status", data="🧠 Thinking started")
+                yield AgentEvent(type="status", data="🧠 Thinking started")
                     _think_char_count += len(event.data)
+                yield AgentEvent(type="status", data=f"🧠 Still thinking: {_think_char_count:,} chars, {time.monotonic() - _t_think_start:.1f}s elapsed")
                     # Hard cap on think tokens — cut the stream when reasoning
                     # runs away before any output tokens have appeared.
                     if (
