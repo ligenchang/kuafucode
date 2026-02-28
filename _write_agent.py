@@ -469,7 +469,7 @@ class Agent:
                 if _remaining_now:
                     _force_tool_use = True
                     _rem_titles_now = ", ".join(
-                        f\'"{s.title}"\' for s in _remaining_now[:5]
+                        f'"{{s.title}}"' for s in _remaining_now[:5]
                     )
                     if len(_remaining_now) > 5:
                         _rem_titles_now += f" and {len(_remaining_now) - 5} more"
@@ -593,7 +593,7 @@ class Agent:
                     self._plan_nudge_count += 1
                     if _incomplete_plan:
                         _rem_titles = ", ".join(
-                            f\'"{s.title}"\' for s in _remaining_steps[:5]
+                            f'"{{s.title}}"' for s in _remaining_steps[:5]
                         )
                         if len(_remaining_steps) > 5:
                             _rem_titles += f" and {len(_remaining_steps) - 5} more"
@@ -754,7 +754,7 @@ class Agent:
                         _result_content = str(_msg.get("content", ""))[:200]
                         break
                 _tool_summaries.append(
-                    f"{tc[\'name\']}("
+                    f"{tc['name']}("
                     + ", ".join(
                         f"{k}={str(v)[:40]}"
                         for k, v in list(tc["args"].items())[:3]
