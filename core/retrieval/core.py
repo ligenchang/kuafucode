@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Optional
 
 # Import WorkspaceIndex to get per-file symbols
-from nvagent.core.index import get_workspace_index
+from nvagent.core.retrieval.index import get_workspace_index
 from nvagent.core.symbols import _iter_workspace_files
 
 # ─────────────────────────────────────────────────────────────────────────────

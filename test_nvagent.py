@@ -155,7 +155,7 @@ class TestSession(unittest.TestCase):
         self.db_path = Path(self.tmpdir) / "sessions.db"
 
     def test_create_and_load_session(self):
-        from nvagent.core.session import SessionStore
+        from nvagent.core.state import SessionStore
 
         store = SessionStore(self.db_path)
         session = store.create_session("/test/workspace")
@@ -166,7 +166,7 @@ class TestSession(unittest.TestCase):
         self.assertEqual(loaded.workspace, "/test/workspace")
 
     def test_save_messages(self):
-        from nvagent.core.session import SessionStore
+        from nvagent.core.state import SessionStore
 
         store = SessionStore(self.db_path)
         session = store.create_session("/test/workspace")
@@ -181,7 +181,7 @@ class TestSession(unittest.TestCase):
         self.assertEqual(loaded.messages[0]["content"], "hello")
 
     def test_list_sessions(self):
-        from nvagent.core.session import SessionStore
+        from nvagent.core.state import SessionStore
 
         store = SessionStore(self.db_path)
         s1 = store.create_session("/workspace/a")
@@ -192,7 +192,7 @@ class TestSession(unittest.TestCase):
         self.assertEqual(len(sessions), 2)
 
     def test_get_last_session(self):
-        from nvagent.core.session import SessionStore
+        from nvagent.core.state import SessionStore
 
         store = SessionStore(self.db_path)
         s1 = store.create_session("/test/ws")
@@ -402,7 +402,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
         init_workspace(self.workspace)
         self.config = load_config(self.workspace)
         self.config.api.api_key = "test-key"
-        from nvagent.core.session import SessionStore
+        from nvagent.core.state import SessionStore
 
         self.store = SessionStore(self.workspace / ".nvagent" / "sessions.db")
         self.session = self.store.create_session(str(self.workspace))

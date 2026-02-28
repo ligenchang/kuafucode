@@ -8,6 +8,9 @@ nvagent chat
 ```
 
 rm -rf build .nvagent dist nvagent.egg-info && pip install --upgrade --force-reinstall .
+
+rm -rf build .nvagent dist nvagent.egg-info && pip install --upgrade --force-reinstall .
+
 rm -rf build .nvagent dist nvagent.egg-info && pip install -e .
 .venv/bin/python -m py_compile tui/app.py && echo "OK"
 

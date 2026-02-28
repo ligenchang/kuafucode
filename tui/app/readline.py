@@ -16,6 +16,16 @@ except ImportError:
 _HISTORY_FILE = Path.home() / ".nvagent" / "input_history"
 _MAX_HISTORY = 1_000
 
+__all__ = [
+    "_readline",
+    "_READLINE_AVAILABLE",
+    "_HISTORY_FILE",
+    "_MAX_HISTORY",
+    "setup_readline",
+    "save_readline_history",
+    "rl_prompt",
+]
+
 
 def setup_readline() -> None:
     """Initialise readline: load history file and configure sensible defaults."""

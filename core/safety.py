@@ -530,7 +530,7 @@ class TestEnforcer:
             return None
 
         # Import here to avoid circular deps
-        from nvagent.core.executor import (
+        from nvagent.core.execution import (
             detect_test_framework,
             build_test_command,
             parse_test_output,

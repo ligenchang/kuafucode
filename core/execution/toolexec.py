@@ -22,11 +22,11 @@ from typing import TYPE_CHECKING, List, Optional
 
 from nvagent.core.events import AgentEvent
 from nvagent.core.feedback import classify_tool_error, RETRY_HINTS
-from nvagent.core.planner import StepStatus
+from nvagent.core.planning.planner import StepStatus
 
 if TYPE_CHECKING:
     from nvagent.core.agent import Agent
-    from nvagent.core.planner import Plan
+    from nvagent.core.planning import Plan
 
 logger = logging.getLogger(__name__)
 

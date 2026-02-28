@@ -23,18 +23,16 @@ from pathlib import Path
 from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from nvagent.config import Config
-from nvagent.core.client import NIMClient, TaskType, classify_task
-from nvagent.core.session import Session, SessionStore
-from nvagent.core.planner import Planner, Plan, StepStatus
+from nvagent.core.client import NIMClient, TaskType, classify_task, cost_usd
+from nvagent.core.state import Session, SessionStore, get_memory
+from nvagent.core.planning import Planner, Plan
 from nvagent.core.safety import GitCheckpointer, ChangeValidator, LoopDetector, ResourceGuard
 from nvagent.core.mcp import McpClient
-from nvagent.core.memory import get_memory
 from nvagent.core.context import assemble_context
 from nvagent.tools import ToolExecutor, TOOL_SCHEMAS
 
-from nvagent.core.events import AgentEvent
-from nvagent.core.pricing import cost_usd
-from nvagent.core.compaction import compact_history, COMPACT_MSG_THRESHOLD, COMPACT_KEEP_RECENT
+from nvagent.core.planning.events import AgentEvent
+from nvagent.core.execution import compact_history, COMPACT_MSG_THRESHOLD, COMPACT_KEEP_RECENT
 
 from nvagent.core.agent_constants import (
     SKIP_PLAN_WORDS,
@@ -43,8 +41,8 @@ from nvagent.core.agent_constants import (
     write_perf_log,
 )
 from nvagent.core.agent_context import build_turn_context
-from nvagent.core.agent_stream import LLMStream
-from nvagent.core.agent_toolexec import ToolBatchExecutor
+from nvagent.core.execution import LLMStream
+from nvagent.core.execution import ToolBatchExecutor
 
 logger = logging.getLogger(__name__)
 

@@ -1,12 +1,9 @@
-"""Core event definitions."""
+"""Core event definitions (re-exported from planning module).
 
-from dataclasses import dataclass
-from typing import Any
+Exports:
+  - AgentEvent - Typed event emitted by the Agent loop
+"""
 
+from nvagent.core.planning.events import AgentEvent
 
-@dataclass
-class AgentEvent:
-    """Typed event emitted by the Agent loop."""
-
-    type: str
-    data: Any
+__all__ = ["AgentEvent"]

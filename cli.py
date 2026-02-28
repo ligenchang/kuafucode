@@ -22,8 +22,9 @@ import typer
 from typing import Annotated
 
 from nvagent.config import Config, load_config, save_config, init_workspace
-from nvagent.core.loop import Agent, AgentEvent
-from nvagent.core.session import Session, SessionStore
+from nvagent.core.agent import Agent
+from nvagent.core.planning import AgentEvent
+from nvagent.core.state import Session, SessionStore
 
 app = typer.Typer(
     name="nvagent",

@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from nvagent.core.memory import get_memory
+from nvagent.core.state import get_memory
 from nvagent.tools.handlers import BaseHandler
 
 

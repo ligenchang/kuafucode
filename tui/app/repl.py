@@ -44,7 +44,7 @@ from nvagent.tui.app.menu import arrow_menu
 from nvagent.tui.app.rendering import render_inline_md, render_line, rule
 from nvagent.tui.app.spinner import Spinner
 from nvagent.tui.app.filewatcher import FileWatcher
-from nvagent.tui.app.readline import rl_prompt, save_readline_history, setup_readline
+from nvagent.tui.app import readline as _readline_module
 
 # Bred is bold red (a custom mix not in ansi.py)
 BRED = "\033[1;31m"
@@ -88,13 +88,13 @@ def _get_pt_session() -> "_PTSession":
         # so that existing entries (stored in libedit/readline format) are
         # visible when pressing Up arrow in the prompt_toolkit prompt.
         mem_history = _PTInMemoryHistory()
-        if _READLINE_AVAILABLE and _readline:
+        if _readline_module._READLINE_AVAILABLE and _readline_module._readline:
             try:
-                n = _readline.get_current_history_length()
+                n = _readline_module._readline.get_current_history_length()
                 # readline history is oldest-first; InMemoryHistory.append_string
                 # expects entries in submission order (oldest first too).
                 for i in range(1, n + 1):
-                    entry = _readline.get_history_item(i)
+                    entry = _readline_module._readline.get_history_item(i)
                     if entry and entry.strip():
                         mem_history.append_string(entry)
             except Exception:
@@ -107,46 +107,13 @@ def _get_pt_session() -> "_PTSession":
     return _pt_session
 
 
-def _setup_readline() -> None:
-    """Initialise readline: load history file and configure sensible defaults."""
-    if not _READLINE_AVAILABLE or not _readline:
-        return
-    try:
-        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        if _HISTORY_FILE.exists():
-            _readline.read_history_file(str(_HISTORY_FILE))
-        _readline.set_history_length(_MAX_HISTORY)
-        # vi-style or emacs (default emacs — matches bash)
-        _readline.parse_and_bind("set editing-mode emacs")
-        # Tab completion: complete from history on double-tab
-        _readline.parse_and_bind("tab: complete")
-    except Exception:
-        pass
 
-
-def _save_readline_history() -> None:
-    """Persist history to disk. Called on clean exit."""
-    if not _READLINE_AVAILABLE or not _readline:
-        return
-    try:
-        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _readline.write_history_file(str(_HISTORY_FILE))
-    except Exception:
-        pass
-
-
-def _rl_prompt(colored: str) -> str:
-    """Wrap ANSI escape sequences in readline non-printing markers (\001...\002).
-
-    Without these markers readline miscounts the visible prompt width, causing
-    the cursor to land in the wrong column after up-arrow edits.
-    """
-    return re.sub(r"(\x1b\[[0-9;]*m)", r"\001\1\002", colored)
 
 
 from nvagent.config import Config
-from nvagent.core.loop import Agent, AgentEvent
-from nvagent.core.session import Session, SessionStore
+from nvagent.core.agent import Agent
+from nvagent.core.planning import AgentEvent
+from nvagent.core.state import Session, SessionStore
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Blocking-stdout guard
@@ -555,18 +522,18 @@ async def _ainput(prompt: str, *, use_readline: bool = False) -> str:
             raise
         # Keep readline history in sync so _save_readline_history() persists
         # entries that were submitted via prompt_toolkit.
-        if _READLINE_AVAILABLE and _readline and result.strip():
+        if _readline_module._READLINE_AVAILABLE and _readline_module._readline and result.strip():
             try:
-                _readline.add_history(result)
+                _readline_module._readline.add_history(result)
             except Exception:
                 pass
         return result
 
-    if use_readline and _READLINE_AVAILABLE:
+    if use_readline and _readline_module._READLINE_AVAILABLE:
         # ── readline fallback: up/down arrow history, Ctrl+R search ──────
-        rl_prompt = _rl_prompt(prompt)
+        rl_prompt_str = _readline_module.rl_prompt(prompt)
         try:
-            result = await loop.run_in_executor(None, input, rl_prompt)
+            result = await loop.run_in_executor(None, input, rl_prompt_str)
         except EOFError:
             raise
         return result
@@ -2118,7 +2085,7 @@ def launch_tui(
     loop.set_default_executor(executor)
 
     # Initialise readline for up/down arrow history, line editing, Ctrl+R search
-    _setup_readline()
+    _readline_module.setup_readline()
 
     # Background: warm the workspace symbol index (non-blocking).
     # Use a daemon thread so Ctrl+C doesn't trigger the ThreadPoolExecutor
@@ -2155,7 +2122,7 @@ def launch_tui(
         sys.stdout.write("\n")
         sys.stdout.flush()
         # Persist readline history so it survives across sessions
-        _save_readline_history()
+        _readline_module.save_readline_history()
         try:
             sys.stdin.close()
         except Exception:

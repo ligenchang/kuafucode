@@ -26,7 +26,7 @@ nvagent = "nvagent.cli:app"
 "nvagent" = "."
 
 [tool.setuptools]
-packages = ["nvagent", "nvagent.core", "nvagent.tools", "nvagent.tools.handlers", "nvagent.tui", "nvagent.tui.app"]
+packages = ["nvagent", "nvagent.core", "nvagent.core.client", "nvagent.core.execution", "nvagent.core.extractors", "nvagent.core.planning", "nvagent.core.retrieval", "nvagent.core.state", "nvagent.tools", "nvagent.tools.handlers", "nvagent.tui", "nvagent.tui.app"]
 
 [tool.setuptools.package-data]
 "nvagent" = ["tui/styles/*.tcss"]

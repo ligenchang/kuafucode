@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from nvagent.core.executor import (
+from nvagent.core.execution import (
     CommandResult,
     parse_test_output,
     detect_test_framework,

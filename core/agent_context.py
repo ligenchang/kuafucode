@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, List
 from nvagent.core.context import estimate_tokens, extract_active_files, assemble_context
 from nvagent.core.symbols import build_symbol_context
 from nvagent.core.index import get_workspace_index
-from nvagent.core.memory import get_memory
+from nvagent.core.state import get_memory
 from nvagent.core.retrieval import retrieve_files
 from nvagent.core.events import AgentEvent
 

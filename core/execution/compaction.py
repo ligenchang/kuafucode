@@ -6,7 +6,7 @@ and also available as Agent.compact() for manual /compact invocations.
 
 from __future__ import annotations
 
-from nvagent.core.session import Session
+from nvagent.core.state import Session
 from nvagent.core.client import NIMClient, TaskType
 
 # ─────────────────────────────────────────────────────────────────────────────
