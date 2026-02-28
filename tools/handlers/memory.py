@@ -28,10 +28,12 @@ class MemoryHandler(BaseHandler):
             )
             return "✓ Memory replaced."
         else:
+
             def _read_and_write() -> None:
                 existing = memory_file.read_text(encoding="utf-8") if memory_file.exists() else ""
                 new_content = existing.rstrip() + "\n\n" + content.strip() + "\n"
                 memory_file.write_text(new_content, encoding="utf-8")
+
             await loop.run_in_executor(None, _read_and_write)
             return "✓ Memory updated."
 
@@ -79,7 +81,7 @@ class MemoryHandler(BaseHandler):
 
     async def memory_forget(self, key: str) -> str:
         mem = get_memory(self.ctx.workspace)
-        ok  = mem.forget(key)
+        ok = mem.forget(key)
         if ok:
             mem.save()
             return f"✓ Removed memory entry: {key}"

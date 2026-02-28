@@ -90,7 +90,9 @@ class FileHandler(BaseHandler):
                         for sym in _sym_idx.symbols[:120]:
                             _sym_lines.append(f"  {sym}")
                         if len(_sym_idx.symbols) > 120:
-                            _sym_lines.append(f"  ... ({len(_sym_idx.symbols) - 120} more — use search_code)")
+                            _sym_lines.append(
+                                f"  ... ({len(_sym_idx.symbols) - 120} more — use search_code)"
+                            )
                     else:
                         _sym_lines.append("## File preview (first 30 lines):")
                         for i, ln in enumerate(lines_list[:30], 1):
@@ -141,23 +143,27 @@ class FileHandler(BaseHandler):
 
         stale_warning = self.ctx._check_stale(fpath)
 
-        new_sl    = content.splitlines()
+        new_sl = content.splitlines()
         new_sl_kw = content.splitlines(keepends=True)
 
         diff_str = ""
         diff_info = ""
         if fpath.exists():
             loop = asyncio.get_event_loop()
+
             def _read_and_diff() -> tuple[str, list[str]]:
                 old = fpath.read_text(encoding="utf-8", errors="replace")
-                d = list(difflib.unified_diff(
-                    old.splitlines(keepends=True),
-                    new_sl_kw,
-                    fromfile=f"a/{path}",
-                    tofile=f"b/{path}",
-                    n=2,
-                ))
+                d = list(
+                    difflib.unified_diff(
+                        old.splitlines(keepends=True),
+                        new_sl_kw,
+                        fromfile=f"a/{path}",
+                        tofile=f"b/{path}",
+                        n=2,
+                    )
+                )
                 return old, d
+
             old_content, diff = await loop.run_in_executor(None, _read_and_diff)
             if str(fpath) not in self.ctx._current_turn_backups:
                 self.ctx._current_turn_backups[str(fpath)] = old_content
@@ -183,9 +189,10 @@ class FileHandler(BaseHandler):
             preview = "\n".join(new_sl[:20])
             more = f"\n... [{lines_count - 20} more lines]" if lines_count > 20 else ""
             action = "overwrite" if fpath.exists() else "create"
-            return (
-                f"[DRY RUN] Would {action} '{path}' ({lines_count} lines).\n"
-                + (f"Diff:\n```diff\n{diff_str}\n```" if diff_str else f"Content preview:\n{preview}{more}")
+            return f"[DRY RUN] Would {action} '{path}' ({lines_count} lines).\n" + (
+                f"Diff:\n```diff\n{diff_str}\n```"
+                if diff_str
+                else f"Content preview:\n{preview}{more}"
             )
 
         fpath.parent.mkdir(parents=True, exist_ok=True)
@@ -197,7 +204,11 @@ class FileHandler(BaseHandler):
 
         fpath.write_text(content, encoding="utf-8")
 
-        rel = str(fpath.relative_to(self.ctx.workspace)) if fpath.is_relative_to(self.ctx.workspace) else str(fpath)
+        rel = (
+            str(fpath.relative_to(self.ctx.workspace))
+            if fpath.is_relative_to(self.ctx.workspace)
+            else str(fpath)
+        )
         if rel not in self.ctx.changed_files:
             self.ctx.changed_files.append(rel)
 
@@ -263,7 +274,11 @@ class FileHandler(BaseHandler):
                 fpath.write_text(content, encoding="utf-8")
                 if str(fpath) not in self.ctx._current_turn_backups:
                     self.ctx._current_turn_backups[str(fpath)] = None
-                rel = str(fpath.relative_to(self.ctx.workspace)) if fpath.is_relative_to(self.ctx.workspace) else str(fpath)
+                rel = (
+                    str(fpath.relative_to(self.ctx.workspace))
+                    if fpath.is_relative_to(self.ctx.workspace)
+                    else str(fpath)
+                )
                 if rel not in self.ctx.changed_files:
                     self.ctx.changed_files.append(rel)
                 return f"✓ Created: {fpath} ({len(content.splitlines())} lines)"
@@ -278,10 +293,10 @@ class FileHandler(BaseHandler):
 
         current = original
         applied: list[str] = []
-        errors:  list[str] = []
+        errors: list[str] = []
 
         for i, edit in enumerate(edits):
-            search  = edit.get("search", "")
+            search = edit.get("search", "")
             replace = edit.get("replace", "")
             if not search:
                 errors.append(f"Edit #{i+1}: empty 'search' string — skipped")
@@ -316,13 +331,13 @@ class FileHandler(BaseHandler):
                 current = current.replace(search, replace, 1)
                 applied.append(f"Edit #{i+1}: replaced {len(search)} chars")
             else:
-                space_re = re.compile(re.escape(re.sub(r"[ \t]+", " ", search)).replace("\\ ", r"[ \t]+"))
+                space_re = re.compile(
+                    re.escape(re.sub(r"[ \t]+", " ", search)).replace("\\ ", r"[ \t]+")
+                )
                 ws_matches = list(space_re.finditer(current))
                 if len(ws_matches) > 1:
-                    match_lines = [current[:m.start()].count("\n") + 1 for m in ws_matches[:5]]
-                    more_msg = (
-                        f" (and {len(ws_matches) - 5} more)" if len(ws_matches) > 5 else ""
-                    )
+                    match_lines = [current[: m.start()].count("\n") + 1 for m in ws_matches[:5]]
+                    more_msg = f" (and {len(ws_matches) - 5} more)" if len(ws_matches) > 5 else ""
                     errors.append(
                         f"Edit #{i+1}: search string (whitespace-normalised) matches "
                         f"{len(ws_matches)} locations "
@@ -331,7 +346,7 @@ class FileHandler(BaseHandler):
                     )
                 elif len(ws_matches) == 1:
                     m = ws_matches[0]
-                    current = current[:m.start()] + replace + current[m.end():]
+                    current = current[: m.start()] + replace + current[m.end() :]
                     applied.append(f"Edit #{i+1}: replaced (whitespace-normalised match)")
                 else:
                     errors.append(f"Edit #{i+1}: search string not found: {search[:80]!r}")
@@ -344,12 +359,15 @@ class FileHandler(BaseHandler):
         curr_sl = current.splitlines(keepends=True)
         diff = await loop.run_in_executor(
             None,
-            lambda: list(difflib.unified_diff(
-                orig_sl, curr_sl,
-                fromfile=f"a/{path}",
-                tofile=f"b/{path}",
-                n=2,
-            ))
+            lambda: list(
+                difflib.unified_diff(
+                    orig_sl,
+                    curr_sl,
+                    fromfile=f"a/{path}",
+                    tofile=f"b/{path}",
+                    n=2,
+                )
+            ),
         )
         diff_str = ""
         if diff:
@@ -364,15 +382,23 @@ class FileHandler(BaseHandler):
                 return f"✗ Skipped (user declined): {path}"
 
         if self.ctx.dry_run:
-            add_lines = sum(1 for l in diff_str.splitlines() if l.startswith("+") and not l.startswith("+++ "))
-            del_lines = sum(1 for l in diff_str.splitlines() if l.startswith("-") and not l.startswith("--- "))
+            add_lines = sum(
+                1 for l in diff_str.splitlines() if l.startswith("+") and not l.startswith("+++ ")
+            )
+            del_lines = sum(
+                1 for l in diff_str.splitlines() if l.startswith("-") and not l.startswith("--- ")
+            )
             return (
                 f"[DRY RUN] Would edit '{path}' — {len(applied)} edit(s), +{add_lines}/-{del_lines} lines.\n"
                 + (f"Diff:\n```diff\n{diff_str}\n```" if diff_str else "")
             )
 
         fpath.write_text(current, encoding="utf-8")
-        rel = str(fpath.relative_to(self.ctx.workspace)) if fpath.is_relative_to(self.ctx.workspace) else str(fpath)
+        rel = (
+            str(fpath.relative_to(self.ctx.workspace))
+            if fpath.is_relative_to(self.ctx.workspace)
+            else str(fpath)
+        )
         if rel not in self.ctx.changed_files:
             self.ctx.changed_files.append(rel)
 
@@ -424,10 +450,16 @@ class FileHandler(BaseHandler):
         lines: list[str] = []
         if recursive:
             loop_ld = asyncio.get_event_loop()
+
             def _walk_recursive() -> list[str]:
                 result: list[str] = []
                 for root, dirs, files in os.walk(dpath):
-                    dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "__pycache__", ".venv")]
+                    dirs[:] = [
+                        d
+                        for d in dirs
+                        if not d.startswith(".")
+                        and d not in ("node_modules", "__pycache__", ".venv")
+                    ]
                     rel_root = Path(root).relative_to(dpath)
                     depth = len(rel_root.parts)
                     indent = "  " * depth
@@ -436,6 +468,7 @@ class FileHandler(BaseHandler):
                     for f in sorted(files):
                         result.append(f"{'  ' * (depth + 1)}{f}")
                 return result
+
             lines = await loop_ld.run_in_executor(None, _walk_recursive)
         else:
             for entry in sorted(dpath.iterdir(), key=lambda p: (p.is_file(), p.name)):

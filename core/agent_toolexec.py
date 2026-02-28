@@ -11,6 +11,7 @@
 7. Deduplicates ``read_file`` results already in context.
 8. Updates plan progress and triggers failure reflection when needed.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,9 +32,15 @@ logger = logging.getLogger(__name__)
 
 # Tool names that count as "write" operations (used for plan-step tracking and
 # post-batch ``_prev_batch_wrote_files`` flag).
-_WRITE_TOOLS: frozenset[str] = frozenset({
-    "write_file", "write_files", "edit_file", "str_replace_editor", "apply_patch",
-})
+_WRITE_TOOLS: frozenset[str] = frozenset(
+    {
+        "write_file",
+        "write_files",
+        "edit_file",
+        "str_replace_editor",
+        "apply_patch",
+    }
+)
 _RUN_TOOLS: frozenset[str] = frozenset({"run_command", "run_tests", "run_formatter"})
 _PROGRESS_TOOLS = _WRITE_TOOLS | _RUN_TOOLS
 
@@ -76,6 +83,7 @@ def _closest_tool(name: str, schemas_by_name: dict) -> str:
 # Result container
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ToolBatchResult:
     """Data produced by :class:`ToolBatchExecutor` after iteration completes."""
@@ -95,6 +103,7 @@ class ToolBatchResult:
 # ──────────────────────────────────────────────────────────────────────────────
 # Async iterator
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class ToolBatchExecutor:
     """Async-iterable executor for one batch of tool calls from the LLM.
@@ -155,11 +164,13 @@ class ToolBatchExecutor:
             }
             for tc in tool_calls_data
         ]
-        messages.append({
-            "role": "assistant",
-            "content": self._assistant_content or None,
-            "tool_calls": openai_tool_calls,
-        })
+        messages.append(
+            {
+                "role": "assistant",
+                "content": self._assistant_content or None,
+                "tool_calls": openai_tool_calls,
+            }
+        )
 
         agent.tools.begin_turn()
 
@@ -180,9 +191,7 @@ class ToolBatchExecutor:
                 _req = _s["function"].get("parameters", {}).get("required", [])
                 if any(r not in _a or _a[r] is None or _a[r] == "" for r in _req):
                     continue
-                _exec_tasks[_tc["id"]] = asyncio.create_task(
-                    agent.tools.execute(_n, _a)
-                )
+                _exec_tasks[_tc["id"]] = asyncio.create_task(agent.tools.execute(_n, _a))
 
         _turn_tool_calls = 0
         _per_turn_limit = agent.config.safety.max_tool_calls_per_turn
@@ -201,9 +210,7 @@ class ToolBatchExecutor:
             schema = schemas_by_name.get(name)
             if schema is None:
                 _suggestion = _closest_tool(name, schemas_by_name)
-                _suggest_str = (
-                    f" Did you mean `{_suggestion}`?" if _suggestion else ""
-                )
+                _suggest_str = f" Did you mean `{_suggestion}`?" if _suggestion else ""
                 _available = ", ".join(sorted(schemas_by_name)[:20])
                 _err_msg = (
                     f"Unknown tool '{name}'. This tool is not available."
@@ -216,11 +223,13 @@ class ToolBatchExecutor:
                     type="tool_result",
                     data={"name": name, "result": f"Error: {_err_msg}"},
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": f"Error: {_err_msg}",
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": f"Error: {_err_msg}",
+                    }
+                )
                 # Inject a one-shot system correction so the model stops retrying
                 _correction = (
                     f"[System] You called the non-existent tool `{name}`."
@@ -238,29 +247,24 @@ class ToolBatchExecutor:
 
             # schema is guaranteed non-None here
             required = schema["function"].get("parameters", {}).get("required", [])
-            missing = [
-                r for r in required
-                if r not in args or args[r] is None or args[r] == ""
-            ]
+            missing = [r for r in required if r not in args or args[r] is None or args[r] == ""]
             if missing:
-                err_msg = (
-                    f"Missing required argument(s) for {name}: {', '.join(missing)}"
-                )
+                err_msg = f"Missing required argument(s) for {name}: {', '.join(missing)}"
                 yield AgentEvent(type="tool_start", data={"name": name, "args": args})
                 yield AgentEvent(
                     type="tool_result",
                     data={"name": name, "result": f"Error: {err_msg}"},
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": f"Error: {err_msg}",
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": f"Error: {err_msg}",
+                    }
+                )
                 if agent.config.safety.loop_detection:
                     agent.loop_detector.record(name, args)
-                agent._missing_arg_streak[name] = (
-                    agent._missing_arg_streak.get(name, 0) + 1
-                )
+                agent._missing_arg_streak[name] = agent._missing_arg_streak.get(name, 0) + 1
                 if agent._missing_arg_streak[name] >= 3:
                     _hint = (
                         f"[Error — tool call stuck] You have called '{name}' "
@@ -273,9 +277,7 @@ class ToolBatchExecutor:
                         "placeholder or empty arguments."
                     )
                     messages.append({"role": "user", "content": _hint})
-                    agent.session.messages.append(
-                        {"role": "user", "content": _hint}
-                    )
+                    agent.session.messages.append({"role": "user", "content": _hint})
                     yield AgentEvent(
                         type="status",
                         data=(
@@ -294,9 +296,7 @@ class ToolBatchExecutor:
             )
 
             if agent.config.agent.safe_mode and name in ("write_file", "delete_file"):
-                yield AgentEvent(
-                    type="status", data=f"[safe_mode] Executing {name}..."
-                )
+                yield AgentEvent(type="status", data=f"[safe_mode] Executing {name}...")
 
             # Execute (use pre-launched task if available)
             try:
@@ -346,9 +346,8 @@ class ToolBatchExecutor:
             )
 
             # Structured error feedback
-            _is_tool_error = (
-                tool_result.startswith("Error:")
-                or tool_result.startswith("Tool error:")
+            _is_tool_error = tool_result.startswith("Error:") or tool_result.startswith(
+                "Tool error:"
             )
             if _is_tool_error:
                 _err_cat = classify_tool_error(name, tool_result)
@@ -366,9 +365,7 @@ class ToolBatchExecutor:
                                 f"with error type '{_err_cat}']\n{_hint_text}"
                             )
                             messages.append({"role": "user", "content": _retry_hint})
-                            agent.session.messages.append(
-                                {"role": "user", "content": _retry_hint}
-                            )
+                            agent.session.messages.append({"role": "user", "content": _retry_hint})
                             yield AgentEvent(
                                 type="status",
                                 data=(
@@ -381,9 +378,7 @@ class ToolBatchExecutor:
                 for _ek in [k for k in agent._tool_error_streak if k[0] == name]:
                     del agent._tool_error_streak[_ek]
 
-            yield AgentEvent(
-                type="tool_result", data={"name": name, "result": tool_result}
-            )
+            yield AgentEvent(type="tool_result", data={"name": name, "result": tool_result})
             self._log_event(
                 "tool_result",
                 {
@@ -415,20 +410,24 @@ class ToolBatchExecutor:
                 result.per_turn_limit_hit = True
                 # Still need to append the current tool result before breaking
                 _msg_content = self._dedup_read(name, args, tool_result, agent)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": _msg_content,
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": _msg_content,
+                    }
+                )
                 break
 
             # Context deduplication for read_file
             _msg_content = self._dedup_read(name, args, tool_result, agent)
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": _msg_content,
-            })
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": _msg_content,
+                }
+            )
 
         agent.tools.end_turn()
 
@@ -451,13 +450,10 @@ class ToolBatchExecutor:
         # ── Plan step tracking and failure reflection ─────────────────────────
         if plan and plan.steps:
             _batch_tool_results: List[str] = [
-                msg["content"]
-                for msg in messages
-                if msg.get("role") == "tool"
-            ][-len(tool_calls_data):]
+                msg["content"] for msg in messages if msg.get("role") == "tool"
+            ][-len(tool_calls_data) :]
             batch_had_error = any(
-                isinstance(r, str)
-                and (r.startswith("Error:") or r.startswith("Tool error:"))
+                isinstance(r, str) and (r.startswith("Error:") or r.startswith("Tool error:"))
                 for r in _batch_tool_results
             )
 
@@ -477,11 +473,7 @@ class ToolBatchExecutor:
 
                 if self.consecutive_error_batches >= 2:
                     self.consecutive_error_batches = 0
-                    _step_title = (
-                        plan.current_step.title
-                        if plan.current_step
-                        else "(unknown step)"
-                    )
+                    _step_title = plan.current_step.title if plan.current_step else "(unknown step)"
                     _done_titles = [s.title for s in plan.completed_steps]
                     yield AgentEvent(type="status", data="Reflecting on failures…")
                     try:
@@ -497,23 +489,26 @@ class ToolBatchExecutor:
                             "Try a different tool or verify paths."
                         )
                     yield AgentEvent(type="reflection", data=reflection_text)
-                    messages.append({
-                        "role": "user",
-                        "content": f"[Self-reflection — recovery hint]\n{reflection_text}",
-                    })
-                    agent.session.messages.append({
-                        "role": "user",
-                        "content": f"[Self-reflection — recovery hint]\n{reflection_text}",
-                    })
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[Self-reflection — recovery hint]\n{reflection_text}",
+                        }
+                    )
+                    agent.session.messages.append(
+                        {
+                            "role": "user",
+                            "content": f"[Self-reflection — recovery hint]\n{reflection_text}",
+                        }
+                    )
             else:
                 self.consecutive_error_batches = 0
                 if plan.current_step:
                     step = plan.current_step
                     _batch_names = {tc["name"] for tc in tool_calls_data}
                     hint = getattr(step, "tool_hint", None) or ""
-                    _step_done = (
-                        (hint and hint in _batch_names)
-                        or (not hint and bool(_batch_names & _PROGRESS_TOOLS))
+                    _step_done = (hint and hint in _batch_names) or (
+                        not hint and bool(_batch_names & _PROGRESS_TOOLS)
                     )
                     if _step_done:
                         plan.advance()
@@ -543,9 +538,7 @@ class ToolBatchExecutor:
         if name != "read_file" or raw_result.startswith("Error"):
             return raw_result
         _rf_path_arg = args.get("path", "")
-        _rf_no_range = (
-            args.get("start_line") is None and args.get("end_line") is None
-        )
+        _rf_no_range = args.get("start_line") is None and args.get("end_line") is None
         if not (_rf_path_arg and _rf_no_range):
             return raw_result
         _rf_abs = str(

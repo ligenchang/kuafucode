@@ -11,17 +11,17 @@ from nvagent.tools.handlers import BaseHandler
 class TodoHandler(BaseHandler):
     """Handles todo_write and todo_read."""
 
-    _VALID_STATUS   = frozenset({"pending", "in_progress", "completed", "cancelled"})
+    _VALID_STATUS = frozenset({"pending", "in_progress", "completed", "cancelled"})
     _VALID_PRIORITY = frozenset({"high", "medium", "low"})
 
     _STATUS_ICON = {
-        "pending":     "○",
+        "pending": "○",
         "in_progress": "◉",
-        "completed":   "✓",
-        "cancelled":   "✗",
+        "completed": "✓",
+        "cancelled": "✗",
     }
     _PRIORITY_LABEL = {"high": "[H]", "medium": "[M]", "low": "[L]"}
-    _STATUS_ORDER   = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
+    _STATUS_ORDER = {"in_progress": 0, "pending": 1, "completed": 2, "cancelled": 3}
     _PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
     # ── todo_write ────────────────────────────────────────────────────────────
@@ -35,9 +35,9 @@ class TodoHandler(BaseHandler):
             if not isinstance(item, dict):
                 errors.append(f"Item {i}: expected object, got {type(item).__name__}")
                 continue
-            tid      = str(item.get("id", "")).strip()
-            content  = str(item.get("content", "")).strip()
-            status   = str(item.get("status", "pending")).strip()
+            tid = str(item.get("id", "")).strip()
+            content = str(item.get("content", "")).strip()
+            status = str(item.get("status", "pending")).strip()
             priority = str(item.get("priority", "medium")).strip()
             if not tid:
                 errors.append(f"Item {i}: 'id' is required")
@@ -53,7 +53,9 @@ class TodoHandler(BaseHandler):
                 continue
             if status == "in_progress":
                 in_progress_count += 1
-            validated.append({"id": tid, "content": content, "status": status, "priority": priority})
+            validated.append(
+                {"id": tid, "content": content, "status": status, "priority": priority}
+            )
 
         if errors:
             return "Error in todo list:\n" + "\n".join(f"  • {e}" for e in errors)
@@ -87,22 +89,22 @@ class TodoHandler(BaseHandler):
             key=lambda t: (
                 self._STATUS_ORDER.get(t["status"], 9),
                 self._PRIORITY_ORDER.get(t["priority"], 9),
-            )
+            ),
         )
 
         lines = ["## Task List\n"]
         for t in sorted_todos:
-            icon    = self._STATUS_ICON.get(t["status"], "?")
-            pri     = self._PRIORITY_LABEL.get(t["priority"], "")
+            icon = self._STATUS_ICON.get(t["status"], "?")
+            pri = self._PRIORITY_LABEL.get(t["priority"], "")
             content = t["content"]
-            tid     = t["id"]
+            tid = t["id"]
             lines.append(f"  {icon} {pri} [{tid}] {content}")
 
         counts: dict[str, int] = {}
         for t in self.ctx._todos:
             counts[t["status"]] = counts.get(t["status"], 0) + 1
-        pending   = counts.get("pending", 0)
-        active    = counts.get("in_progress", 0)
+        pending = counts.get("pending", 0)
+        active = counts.get("in_progress", 0)
         completed = counts.get("completed", 0)
         cancelled = counts.get("cancelled", 0)
         lines.append(

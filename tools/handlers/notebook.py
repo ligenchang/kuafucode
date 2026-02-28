@@ -88,8 +88,10 @@ class NotebookHandler(BaseHandler):
 
         # ── Summary of all cells ──────────────────────────────────────────────
         try:
-            kernel = nb.get("metadata", {}).get("kernelspec", {}).get("display_name", "unknown kernel")
-            lang   = nb.get("metadata", {}).get("language_info", {}).get("name", "")
+            kernel = (
+                nb.get("metadata", {}).get("kernelspec", {}).get("display_name", "unknown kernel")
+            )
+            lang = nb.get("metadata", {}).get("language_info", {}).get("name", "")
         except Exception:
             kernel, lang = "unknown", ""
 
@@ -201,7 +203,11 @@ class NotebookHandler(BaseHandler):
                 json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8"
             ),
         )
-        rel = str(fpath.relative_to(self.ctx.workspace)) if fpath.is_relative_to(self.ctx.workspace) else str(fpath)
+        rel = (
+            str(fpath.relative_to(self.ctx.workspace))
+            if fpath.is_relative_to(self.ctx.workspace)
+            else str(fpath)
+        )
         if rel not in self.ctx.changed_files:
             self.ctx.changed_files.append(rel)
         return f"✓ {action} in {fpath.name} ({len(cells)} cells total)."

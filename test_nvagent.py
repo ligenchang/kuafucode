@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Config tests
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestConfig(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -31,12 +32,14 @@ class TestConfig(unittest.TestCase):
 
     def test_init_workspace_creates_files(self):
         from nvagent.config import init_workspace
+
         config_dir = init_workspace(self.workspace)
         self.assertTrue((config_dir / "config.toml").exists())
         self.assertTrue((config_dir / "memory.md").exists())
 
     def test_load_default_config(self):
         from nvagent.config import init_workspace, load_config
+
         init_workspace(self.workspace)
         config = load_config(self.workspace)
         self.assertEqual(config.api.base_url, "https://integrate.api.nvidia.com/v1")
@@ -44,6 +47,7 @@ class TestConfig(unittest.TestCase):
 
     def test_save_and_load_config(self):
         from nvagent.config import init_workspace, load_config, save_config
+
         init_workspace(self.workspace)
         config = load_config(self.workspace)
         config.api.api_key = "test-key-123"
@@ -56,6 +60,7 @@ class TestConfig(unittest.TestCase):
 
     def test_api_key_from_env(self):
         from nvagent.config import init_workspace, load_config
+
         init_workspace(self.workspace)
         config = load_config(self.workspace)
         config.api.api_key = ""
@@ -65,12 +70,14 @@ class TestConfig(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Context tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestContext(unittest.TestCase):
     def setUp(self):
@@ -88,6 +95,7 @@ class TestContext(unittest.TestCase):
 
     def test_build_file_tree(self):
         from nvagent.core.context import build_file_tree
+
         self._create_files()
         tree = build_file_tree(self.workspace, [".git", "__pycache__"])
         self.assertIn("src", tree)
@@ -96,12 +104,14 @@ class TestContext(unittest.TestCase):
 
     def test_detect_project_type_python(self):
         from nvagent.core.context import detect_project_type
+
         (self.workspace / "pyproject.toml").write_text("")
         result = detect_project_type(self.workspace)
         self.assertIn("Python", result)
 
     def test_detect_project_type_node(self):
         from nvagent.core.context import detect_project_type
+
         (self.workspace / "package.json").write_text("{}")
         result = detect_project_type(self.workspace)
         self.assertIn("Node", result)
@@ -109,6 +119,7 @@ class TestContext(unittest.TestCase):
     def test_build_system_prompt_contains_workspace(self):
         from nvagent.config import init_workspace, load_config
         from nvagent.core.context import build_system_prompt
+
         self._create_files()
         init_workspace(self.workspace)
         config = load_config(self.workspace)
@@ -118,6 +129,7 @@ class TestContext(unittest.TestCase):
 
     def test_ignore_patterns(self):
         from nvagent.core.context import build_file_tree, is_ignored
+
         # Create ignored dir
         (self.workspace / "__pycache__").mkdir()
         (self.workspace / "__pycache__" / "main.cpython-312.pyc").write_text("")
@@ -128,12 +140,14 @@ class TestContext(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestSession(unittest.TestCase):
     def setUp(self):
@@ -142,6 +156,7 @@ class TestSession(unittest.TestCase):
 
     def test_create_and_load_session(self):
         from nvagent.core.session import SessionStore
+
         store = SessionStore(self.db_path)
         session = store.create_session("/test/workspace")
         self.assertIsNotNone(session.id)
@@ -152,6 +167,7 @@ class TestSession(unittest.TestCase):
 
     def test_save_messages(self):
         from nvagent.core.session import SessionStore
+
         store = SessionStore(self.db_path)
         session = store.create_session("/test/workspace")
         session.messages = [
@@ -166,6 +182,7 @@ class TestSession(unittest.TestCase):
 
     def test_list_sessions(self):
         from nvagent.core.session import SessionStore
+
         store = SessionStore(self.db_path)
         s1 = store.create_session("/workspace/a")
         s2 = store.create_session("/workspace/a")
@@ -176,6 +193,7 @@ class TestSession(unittest.TestCase):
 
     def test_get_last_session(self):
         from nvagent.core.session import SessionStore
+
         store = SessionStore(self.db_path)
         s1 = store.create_session("/test/ws")
         s2 = store.create_session("/test/ws")
@@ -185,6 +203,7 @@ class TestSession(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
@@ -192,11 +211,13 @@ class TestSession(unittest.TestCase):
 # Tool executor tests
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.workspace = Path(self.tmpdir)
         from nvagent.tools import ToolExecutor
+
         self.executor = ToolExecutor(self.workspace)
 
     async def test_read_file(self):
@@ -209,36 +230,33 @@ class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
     async def test_read_file_with_line_range(self):
         test_file = self.workspace / "test.py"
         test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
-        result = await self.executor.execute("read_file", {
-            "path": "test.py", "start_line": 2, "end_line": 3
-        })
+        result = await self.executor.execute(
+            "read_file", {"path": "test.py", "start_line": 2, "end_line": 3}
+        )
         self.assertIn("line2", result)
         self.assertIn("line3", result)
         self.assertNotIn("line1", result)
         self.assertNotIn("line5", result)
 
     async def test_write_file_creates_file(self):
-        result = await self.executor.execute("write_file", {
-            "path": "new_file.py",
-            "content": "# new file\nprint('hello')\n"
-        })
+        result = await self.executor.execute(
+            "write_file", {"path": "new_file.py", "content": "# new file\nprint('hello')\n"}
+        )
         self.assertIn("✓", result)
         self.assertTrue((self.workspace / "new_file.py").exists())
 
     async def test_write_file_creates_dirs(self):
-        result = await self.executor.execute("write_file", {
-            "path": "src/utils/helpers.py",
-            "content": "def helper(): pass\n"
-        })
+        result = await self.executor.execute(
+            "write_file", {"path": "src/utils/helpers.py", "content": "def helper(): pass\n"}
+        )
         self.assertTrue((self.workspace / "src" / "utils" / "helpers.py").exists())
 
     async def test_write_file_shows_diff(self):
         test_file = self.workspace / "test.py"
         test_file.write_text("old content\n")
-        result = await self.executor.execute("write_file", {
-            "path": "test.py",
-            "content": "new content\n"
-        })
+        result = await self.executor.execute(
+            "write_file", {"path": "test.py", "content": "new content\n"}
+        )
         self.assertIn("diff", result.lower())
 
     async def test_list_dir(self):
@@ -255,16 +273,20 @@ class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Exit code: 0", result)
 
     async def test_run_command_captures_stderr(self):
-        result = await self.executor.execute("run_command", {
-            "command": "python3 -c \"import sys; sys.stderr.write('err_output\\n')\""
-        })
+        result = await self.executor.execute(
+            "run_command",
+            {"command": "python3 -c \"import sys; sys.stderr.write('err_output\\n')\""},
+        )
         self.assertIn("err_output", result)
 
     async def test_run_command_timeout(self):
-        result = await self.executor.execute("run_command", {
-            "command": "sleep 100",
-            "timeout": 1,
-        })
+        result = await self.executor.execute(
+            "run_command",
+            {
+                "command": "sleep 100",
+                "timeout": 1,
+            },
+        )
         self.assertIn("timed out", result.lower())
 
     async def test_search_code_finds_match(self):
@@ -285,10 +307,14 @@ class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
 
     async def test_update_memory_append(self):
         from nvagent.config import init_workspace
+
         init_workspace(self.workspace)
-        result = await self.executor.execute("update_memory", {
-            "content": "## New Note\nThis is important.",
-        })
+        result = await self.executor.execute(
+            "update_memory",
+            {
+                "content": "## New Note\nThis is important.",
+            },
+        )
         self.assertIn("✓", result)
         memory_file = self.workspace / ".nvagent" / "memory.md"
         self.assertTrue(memory_file.exists())
@@ -312,6 +338,7 @@ class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
@@ -319,26 +346,31 @@ class TestToolExecutor(unittest.IsolatedAsyncioTestCase):
 # Client / model routing tests
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestModelRouting(unittest.TestCase):
     def test_classify_fast_task(self):
         from nvagent.core.client import classify_task, TaskType
+
         self.assertEqual(classify_task("explain what this function does"), TaskType.FAST)
         self.assertEqual(classify_task("what is the difference between X and Y"), TaskType.FAST)
         self.assertEqual(classify_task("summarize the codebase"), TaskType.FAST)
 
     def test_classify_code_task(self):
         from nvagent.core.client import classify_task, TaskType
+
         self.assertEqual(classify_task("implement a full authentication system"), TaskType.CODE)
         self.assertEqual(classify_task("build a REST API from scratch"), TaskType.CODE)
 
     def test_classify_default_task(self):
         from nvagent.core.client import classify_task, TaskType
+
         self.assertEqual(classify_task("add type hints to auth.py"), TaskType.DEFAULT)
         self.assertEqual(classify_task("fix the bug in the login function"), TaskType.DEFAULT)
 
     def test_nim_client_no_key_raises(self):
         from nvagent.config import Config
         from nvagent.core.client import NIMClient
+
         config = Config()
         config.api.api_key = ""
         with self.assertRaises(ValueError):
@@ -347,6 +379,7 @@ class TestModelRouting(unittest.TestCase):
     def test_get_model_routing(self):
         from nvagent.config import Config
         from nvagent.core.client import NIMClient, TaskType
+
         config = Config()
         config.api.api_key = "test-key"
         client = NIMClient(config)
@@ -359,20 +392,24 @@ class TestModelRouting(unittest.TestCase):
 # Agent loop tests (mocked LLM)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.workspace = Path(self.tmpdir)
         from nvagent.config import init_workspace, load_config
+
         init_workspace(self.workspace)
         self.config = load_config(self.workspace)
         self.config.api.api_key = "test-key"
         from nvagent.core.session import SessionStore
+
         self.store = SessionStore(self.workspace / ".nvagent" / "sessions.db")
         self.session = self.store.create_session(str(self.workspace))
 
     def _make_agent(self):
         from nvagent.core.loop import Agent
+
         return Agent(
             config=self.config,
             workspace=self.workspace,
@@ -421,12 +458,17 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
                 yield StreamEvent(type="done", data={})
             elif call_count[0] == 2:
                 # Second call: emit tool call
-                yield StreamEvent(type="tool_calls", data=[{
-                    "id": "call_123",
-                    "name": "list_dir",
-                    "args": {"path": "."},
-                    "args_raw": '{"path": "."}',
-                }])
+                yield StreamEvent(
+                    type="tool_calls",
+                    data=[
+                        {
+                            "id": "call_123",
+                            "name": "list_dir",
+                            "args": {"path": "."},
+                            "args_raw": '{"path": "."}',
+                        }
+                    ],
+                )
             else:
                 # Third call: normal response
                 yield StreamEvent(type="token", data="I listed the directory.")
@@ -472,6 +514,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
 
     def tearDown(self):
         import shutil
+
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 
@@ -479,9 +522,11 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
 # Integration: Tool schemas
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestToolSchemas(unittest.TestCase):
     def test_all_tools_have_required_fields(self):
         from nvagent.tools import TOOL_SCHEMAS
+
         for tool in TOOL_SCHEMAS:
             self.assertEqual(tool["type"], "function")
             fn = tool["function"]
@@ -492,10 +537,12 @@ class TestToolSchemas(unittest.TestCase):
 
     def test_tool_count(self):
         from nvagent.tools import TOOL_SCHEMAS
+
         self.assertGreaterEqual(len(TOOL_SCHEMAS), 8)
 
     def test_tool_names_are_unique(self):
         from nvagent.tools import TOOL_SCHEMAS
+
         names = [t["function"]["name"] for t in TOOL_SCHEMAS]
         self.assertEqual(len(names), len(set(names)))
 

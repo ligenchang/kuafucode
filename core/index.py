@@ -35,26 +35,33 @@ from typing import Callable, Optional
 # Optional fast JSON backend (pip install orjson)
 try:
     import orjson as _orjson
+
     def _json_dumps(obj: object) -> bytes:
         return _orjson.dumps(obj)
+
     def _json_loads(data: str | bytes) -> object:
         return _orjson.loads(data)
+
 except ImportError:
+
     def _json_dumps(obj: object) -> bytes:  # type: ignore[misc]
         return json.dumps(obj, indent=None, separators=(",", ":")).encode()
+
     def _json_loads(data: str | bytes) -> object:  # type: ignore[misc]
         if isinstance(data, bytes):
             data = data.decode()
         return json.loads(data)
 
+
 # Import only what we need from symbols — no circular deps possible since
 # symbols.py does NOT import from index.py
 from nvagent.core.symbols import (
-    Symbol, SymbolIndex,
-    extract_symbols, _iter_workspace_files,
+    Symbol,
+    SymbolIndex,
+    extract_symbols,
+    _iter_workspace_files,
     get_dependency_graph,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Cache entry
@@ -65,29 +72,30 @@ _CACHE_VERSION = 2
 
 @dataclass
 class _CacheEntry:
-    mtime:    float
+    mtime: float
     language: str
-    symbols:  list[Symbol]
-    imports:  list[str]     # raw import strings (for quick re-export resolution)
+    symbols: list[Symbol]
+    imports: list[str]  # raw import strings (for quick re-export resolution)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SymbolMatch  (result type for find_symbol)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class SymbolMatch:
-    file:      Path
-    line:      int
-    kind:      str
-    name:      str
+    file: Path
+    line: int
+    kind: str
+    name: str
     signature: str
     docstring: str = ""
 
     def render(self, workspace: Optional[Path] = None) -> str:
         try:
             ws_r = workspace.resolve() if workspace else None
-            rel  = self.file.relative_to(ws_r) if ws_r else self.file
+            rel = self.file.relative_to(ws_r) if ws_r else self.file
         except ValueError:
             rel = self.file
         doc = f"  # {self.docstring[:80]}" if self.docstring else ""
@@ -97,6 +105,7 @@ class SymbolMatch:
 # ─────────────────────────────────────────────────────────────────────────────
 # WorkspaceIndex
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class WorkspaceIndex:
     """
@@ -115,9 +124,9 @@ class WorkspaceIndex:
 
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace.resolve()
-        self._cache:  dict[str, _CacheEntry] = {}   # abs_str → entry
-        self._lock    = threading.Lock()
-        self._dirty   = False   # cache has unsaved changes
+        self._cache: dict[str, _CacheEntry] = {}  # abs_str → entry
+        self._lock = threading.Lock()
+        self._dirty = False  # cache has unsaved changes
 
     # ── Core cache access ────────────────────────────────────────────────────
 
@@ -128,7 +137,7 @@ class WorkspaceIndex:
         Zero extra work for files that haven't changed.
         """
         rpath = path.resolve()
-        key   = str(rpath)
+        key = str(rpath)
 
         try:
             current_mtime = rpath.stat().st_mtime
@@ -195,14 +204,16 @@ class WorkspaceIndex:
                     continue
                 if kinds and sym.kind not in kinds:
                     continue
-                matches.append(SymbolMatch(
-                    file      = Path(key),
-                    line      = sym.line,
-                    kind      = sym.kind,
-                    name      = sym.name,
-                    signature = sym.signature,
-                    docstring = sym.docstring,
-                ))
+                matches.append(
+                    SymbolMatch(
+                        file=Path(key),
+                        line=sym.line,
+                        kind=sym.kind,
+                        name=sym.name,
+                        signature=sym.signature,
+                        docstring=sym.docstring,
+                    )
+                )
 
         matches.sort(key=lambda m: (str(m.file), m.line))
         return matches
@@ -231,14 +242,16 @@ class WorkspaceIndex:
                     continue
                 if kinds and sym.kind not in kinds:
                     continue
-                matches.append(SymbolMatch(
-                    file      = Path(key),
-                    line      = sym.line,
-                    kind      = sym.kind,
-                    name      = sym.name,
-                    signature = sym.signature,
-                    docstring = sym.docstring,
-                ))
+                matches.append(
+                    SymbolMatch(
+                        file=Path(key),
+                        line=sym.line,
+                        kind=sym.kind,
+                        name=sym.name,
+                        signature=sym.signature,
+                        docstring=sym.docstring,
+                    )
+                )
 
         matches.sort(key=lambda m: (len(m.name), str(m.file), m.line))
         return matches[:max_results]
@@ -264,8 +277,8 @@ class WorkspaceIndex:
             files.append(fpath)
 
         def _index_one(fpath: Path) -> None:
-            self.symbols_for(fpath)     # prime symbol cache (thread-safe)
-            dep_graph.build_file(fpath) # prime dep graph  (thread-safe)
+            self.symbols_for(fpath)  # prime symbol cache (thread-safe)
+            dep_graph.build_file(fpath)  # prime dep graph  (thread-safe)
 
         n_workers = min(max(1, (os.cpu_count() or 1)), 8)
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as ex:
@@ -302,14 +315,14 @@ class WorkspaceIndex:
             except ValueError:
                 continue
             files_data[key] = {
-                "mtime":    entry.mtime,
+                "mtime": entry.mtime,
                 "language": entry.language,
-                "symbols":  [
+                "symbols": [
                     {
-                        "kind":      s.kind,
-                        "name":      s.name,
+                        "kind": s.kind,
+                        "name": s.name,
                         "signature": s.signature,
-                        "line":      s.line,
+                        "line": s.line,
                         "docstring": s.docstring,
                     }
                     for s in entry.symbols
@@ -318,10 +331,10 @@ class WorkspaceIndex:
             }
 
         data = {
-            "version":   _CACHE_VERSION,
+            "version": _CACHE_VERSION,
             "workspace": str(self.workspace),
-            "built_at":  time.time(),
-            "files":     files_data,
+            "built_at": time.time(),
+            "files": files_data,
         }
 
         try:
@@ -332,7 +345,7 @@ class WorkspaceIndex:
             with self._lock:
                 self._dirty = False
         except Exception:
-            pass   # Persistence is best-effort
+            pass  # Persistence is best-effort
 
     def load(self) -> int:
         """
@@ -351,7 +364,7 @@ class WorkspaceIndex:
             return 0
 
         if raw.get("version") != _CACHE_VERSION:
-            return 0    # Stale format — ignore
+            return 0  # Stale format — ignore
 
         loaded = 0
         with self._lock:
@@ -368,19 +381,19 @@ class WorkspaceIndex:
 
                 symbols = [
                     Symbol(
-                        kind      = s["kind"],
-                        name      = s["name"],
-                        signature = s["signature"],
-                        line      = s.get("line", 0),
-                        docstring = s.get("docstring", ""),
+                        kind=s["kind"],
+                        name=s["name"],
+                        signature=s["signature"],
+                        line=s.get("line", 0),
+                        docstring=s.get("docstring", ""),
                     )
                     for s in fdata.get("symbols", [])
                 ]
                 self._cache[key] = _CacheEntry(
-                    mtime    = fdata["mtime"],
-                    language = fdata.get("language", "unknown"),
-                    symbols  = symbols,
-                    imports  = fdata.get("imports", []),
+                    mtime=fdata["mtime"],
+                    language=fdata.get("language", "unknown"),
+                    symbols=symbols,
+                    imports=fdata.get("imports", []),
                 )
                 loaded += 1
 
@@ -390,7 +403,7 @@ class WorkspaceIndex:
 
     def stats(self) -> str:
         with self._lock:
-            n_files   = len(self._cache)
+            n_files = len(self._cache)
             n_symbols = sum(len(e.symbols) for e in self._cache.values())
         return f"{n_files} files cached, {n_symbols} symbols indexed"
 
@@ -403,8 +416,8 @@ class WorkspaceIndex:
 # Module-level singleton  (one index per workspace path)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_INDICES:      dict[str, WorkspaceIndex] = {}
-_INDICES_LOCK  = threading.Lock()
+_INDICES: dict[str, WorkspaceIndex] = {}
+_INDICES_LOCK = threading.Lock()
 
 
 def get_workspace_index(workspace: Path) -> WorkspaceIndex:
@@ -418,7 +431,7 @@ def get_workspace_index(workspace: Path) -> WorkspaceIndex:
     with _INDICES_LOCK:
         if key not in _INDICES:
             idx = WorkspaceIndex(workspace)
-            idx.load()          # instant cold-start from .nvagent/index.json
+            idx.load()  # instant cold-start from .nvagent/index.json
             _INDICES[key] = idx
             # Share symbol cache with DependencyGraph so both singletons
             # call extract_symbols() at most once per file per mtime change.

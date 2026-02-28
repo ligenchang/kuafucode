@@ -59,15 +59,15 @@ HIDE_CURSOR = "\033[?25l"
 SHOW_CURSOR = "\033[?25h"
 
 # Palette
-GREEN = "\033[38;2;118;185;0m"      # NVIDIA green
-BLUE = "\033[38;2;121;192;255m"    # user blue
+GREEN = "\033[38;2;118;185;0m"  # NVIDIA green
+BLUE = "\033[38;2;121;192;255m"  # user blue
 WHITE = "\033[38;2;230;237;243m"
-ORANGE = "\033[38;2;240;136;62m"     # tool calls
-GRAY = "\033[38;2;139;148;158m"    # previews / dim
+ORANGE = "\033[38;2;240;136;62m"  # tool calls
+GRAY = "\033[38;2;139;148;158m"  # previews / dim
 YELLOW = "\033[33m"
 RED = "\033[31m"
 BRED = "\033[1;31m"
-VIOLET = "\033[38;2;167;139;250m"    # spinner / thinking
+VIOLET = "\033[38;2;167;139;250m"  # spinner / thinking
 
 
 def c(*parts: str) -> str:
@@ -91,6 +91,7 @@ def cols() -> int:
         return _cols_cache[1]
     try:
         import shutil
+
         width = shutil.get_terminal_size().columns
     except Exception:
         width = 80
@@ -111,6 +112,7 @@ def ts() -> str:
 def strip_ansi(s: str) -> str:
     """Remove ANSI escape sequences from a string."""
     import re
+
     _ANSI_STRIP_RE = re.compile(r"\x1b\[[0-9;]*m")
     return _ANSI_STRIP_RE.sub("", s)
 

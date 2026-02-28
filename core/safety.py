@@ -54,15 +54,16 @@ from typing import Optional
 # (config ← safety ← executor ← tools ← config)
 from nvagent.config import SafetyConfig  # noqa: F401 – re-exported for convenience
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Violation
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Violation:
     """A safety limit that was breached."""
-    kind: str          # "loop" | "resource" | "validation" | "tests"
+
+    kind: str  # "loop" | "resource" | "validation" | "tests"
     message: str
     fatal: bool = True  # fatal → abort task; non-fatal → warn only
 
@@ -74,6 +75,7 @@ class Violation:
 # ─────────────────────────────────────────────────────────────────────────────
 # ValidationResult
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ValidationResult:
@@ -96,6 +98,7 @@ class ValidationResult:
 # ─────────────────────────────────────────────────────────────────────────────
 # GitCheckpointer
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _git(args: list[str], cwd: Path, timeout: int = 15) -> tuple[str, str, int]:
     """Run a git command; return (stdout, stderr, returncode)."""
@@ -120,8 +123,8 @@ class GitCheckpointer:
 
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
-        self._checkpoint_ref: Optional[str] = None    # SHA of checkpoint commit
-        self._stash_ref: Optional[str] = None         # stash entry when dirty
+        self._checkpoint_ref: Optional[str] = None  # SHA of checkpoint commit
+        self._stash_ref: Optional[str] = None  # stash entry when dirty
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -211,6 +214,7 @@ class GitCheckpointer:
 # ChangeValidator
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 # Syntax checkers: extension → callable(path: Path) → list[str] errors
 def _check_python_syntax(path: Path) -> list[str]:
     try:
@@ -249,13 +253,13 @@ def _check_typescript_syntax(path: Path, workspace: Path) -> list[str]:
         for line in (r.stdout + r.stderr).splitlines():
             if "error TS" in line:
                 errors.append(line.strip()[:200])
-        return errors[:5]   # cap at 5
+        return errors[:5]  # cap at 5
     except Exception:
         return []
 
 
 _SYNTAX_CHECKERS: dict[str, object] = {
-    ".py":   _check_python_syntax,
+    ".py": _check_python_syntax,
     ".json": _check_json_syntax,
 }
 _TS_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx"}
@@ -279,8 +283,7 @@ class ChangeValidator:
     def validate_file(self, path: Path) -> ValidationResult:
         """Synchronous validation (called from async context via executor)."""
         if not path.exists():
-            return ValidationResult(ok=False, path=str(path),
-                                    errors=[f"File not found: {path}"])
+            return ValidationResult(ok=False, path=str(path), errors=[f"File not found: {path}"])
 
         errors: list[str] = []
         warnings: list[str] = []
@@ -299,9 +302,10 @@ class ChangeValidator:
             if ruff:
                 try:
                     r = subprocess.run(
-                        [ruff, "check", "--output-format=concise",
-                         "--select=E,F,W", str(path)],
-                        capture_output=True, text=True, timeout=15,
+                        [ruff, "check", "--output-format=concise", "--select=E,F,W", str(path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
                     )
                     for line in (r.stdout + r.stderr).splitlines():
                         if line.strip() and "error" in line.lower():
@@ -315,8 +319,9 @@ class ChangeValidator:
 
         return ValidationResult(
             ok=len(errors) == 0,
-            path=str(path.relative_to(self.workspace)
-                      if path.is_relative_to(self.workspace) else path),
+            path=str(
+                path.relative_to(self.workspace) if path.is_relative_to(self.workspace) else path
+            ),
             errors=errors,
             warnings=warnings,
         )
@@ -329,6 +334,7 @@ class ChangeValidator:
 # ─────────────────────────────────────────────────────────────────────────────
 # LoopDetector
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _fingerprint(tool_name: str, args: dict) -> str:
     """Stable hash of a tool call — insensitive to key order."""
@@ -361,10 +367,11 @@ class LoopDetector:
         self._history.append((tool_name, fp))
 
     def is_looping(self) -> bool:
-        recent = list(self._history)[-self._window:]
+        recent = list(self._history)[-self._window :]
 
         # Strategy 1: exact repeat count
         from collections import Counter
+
         counts = Counter(fp for _, fp in recent)
         for fp, count in counts.items():
             if count >= self._max_identical:
@@ -379,7 +386,7 @@ class LoopDetector:
         n = len(recent)
         if n >= 4:
             half = n // 2
-            first_half  = [fp for _, fp in recent[:half]]
+            first_half = [fp for _, fp in recent[:half]]
             second_half = [fp for _, fp in recent[half : half * 2]]
             if first_half == second_half:
                 tools = [n for n, _ in recent[:half]]
@@ -403,14 +410,15 @@ class LoopDetector:
 # ResourceGuard
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ResourceState:
-    tokens_used:    int = 0
-    turns:          int = 0
-    tool_calls:     int = 0
-    files_changed:  int = 0
-    output_bytes:   int = 0
-    elapsed_s:      float = 0.0
+    tokens_used: int = 0
+    turns: int = 0
+    tool_calls: int = 0
+    files_changed: int = 0
+    output_bytes: int = 0
+    elapsed_s: float = 0.0
 
 
 class ResourceGuard:
@@ -437,11 +445,11 @@ class ResourceGuard:
         files_changed: int = 0,
         output_bytes: int = 0,
     ) -> None:
-        self.state.tokens_used   += tokens
-        self.state.tool_calls    += tool_calls
-        self.state.files_changed  = files_changed   # set (not increment)
-        self.state.output_bytes  += output_bytes
-        self.state.elapsed_s      = time.monotonic() - self._start
+        self.state.tokens_used += tokens
+        self.state.tool_calls += tool_calls
+        self.state.files_changed = files_changed  # set (not increment)
+        self.state.output_bytes += output_bytes
+        self.state.elapsed_s = time.monotonic() - self._start
 
     def check(self) -> Optional[Violation]:
         s = self.state
@@ -481,7 +489,7 @@ class ResourceGuard:
                     f"Too many files modified: {s.files_changed} ≥ {c.max_files_per_task}. "
                     "Pausing — please review changes before continuing."
                 ),
-                fatal=False,   # warning, not abort
+                fatal=False,  # warning, not abort
             )
         return None
 
@@ -496,6 +504,7 @@ class ResourceGuard:
 # ─────────────────────────────────────────────────────────────────────────────
 # TestEnforcer
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestEnforcer:
     """
@@ -522,7 +531,9 @@ class TestEnforcer:
 
         # Import here to avoid circular deps
         from nvagent.core.executor import (
-            detect_test_framework, build_test_command, parse_test_output,
+            detect_test_framework,
+            build_test_command,
+            parse_test_output,
         )
 
         fw = detect_test_framework(self.workspace)
@@ -533,8 +544,7 @@ class TestEnforcer:
         if cmd_override:
             cmd = cmd_override.split()
         else:
-            cmd = build_test_command(fw, extra_args=["--tb=no", "-q"]
-                                     if fw == "pytest" else None)
+            cmd = build_test_command(fw, extra_args=["--tb=no", "-q"] if fw == "pytest" else None)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -550,7 +560,7 @@ class TestEnforcer:
             return Violation(
                 kind="tests",
                 message=f"Test suite timed out ({self._cfg.test_timeout}s). "
-                        "Cannot verify correctness — task blocked.",
+                "Cannot verify correctness — task blocked.",
                 fatal=True,
             )
         except FileNotFoundError:
@@ -566,9 +576,7 @@ class TestEnforcer:
         if not suite.success:
             failures_str = ""
             if suite.failing_tests:
-                failures_str = "\n" + "\n".join(
-                    f"  ✗ {t.name}" for t in suite.failing_tests[:10]
-                )
+                failures_str = "\n" + "\n".join(f"  ✗ {t.name}" for t in suite.failing_tests[:10])
             return Violation(
                 kind="tests",
                 message=(

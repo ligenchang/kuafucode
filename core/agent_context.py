@@ -10,6 +10,7 @@ Handles:
 Returns a :class:`ContextResult` that the :class:`~nvagent.core.agent.Agent`
 can inspect and then emit the bundled status events to the TUI.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 # Result container
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ContextResult:
@@ -62,6 +64,7 @@ class ContextResult:
 # ──────────────────────────────────────────────────────────────────────────────
 # Main entry point
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 async def build_turn_context(agent: "Agent", user_message: str) -> ContextResult:
     """Assemble the system prompt and gather context for a new turn.
@@ -194,10 +197,7 @@ async def build_turn_context(agent: "Agent", user_message: str) -> ContextResult
     events.append(
         AgentEvent(
             type="status",
-            data=(
-                f"⏱ symbols {perf['symbols']:.2f}s"
-                f"  context ~{result.token_estimate:,} tok"
-            ),
+            data=(f"⏱ symbols {perf['symbols']:.2f}s" f"  context ~{result.token_estimate:,} tok"),
         )
     )
 

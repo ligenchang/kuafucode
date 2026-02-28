@@ -15,8 +15,10 @@ from typing import Optional
 from nvagent.core.executor import (
     CommandResult,
     parse_test_output,
-    detect_test_framework, build_test_command,
-    detect_formatters, build_formatter_command,
+    detect_test_framework,
+    build_test_command,
+    detect_formatters,
+    build_formatter_command,
 )
 from nvagent.tools.handlers import BaseHandler
 from nvagent.tools.schemas import _kill_proc_group
@@ -138,9 +140,7 @@ class ExecHandler(BaseHandler):
                     stderr=asyncio.subprocess.PIPE,
                     cwd=self.ctx.workspace,
                 )
-                stdout_b, stderr_b = await asyncio.wait_for(
-                    proc.communicate(), timeout=300
-                )
+                stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=300)
                 duration = __import__("time").monotonic() - t0
             except asyncio.TimeoutError:
                 return f"⏱ Test run timed out (300s). Command: {' '.join(cmd)}"
@@ -210,7 +210,7 @@ class ExecHandler(BaseHandler):
 
         out = stdout_b.decode("utf-8", errors="replace").strip()
         err = stderr_b.decode("utf-8", errors="replace").strip()
-        rc  = proc.returncode
+        rc = proc.returncode
 
         if check_only:
             if rc == 0:
@@ -238,8 +238,14 @@ class ExecHandler(BaseHandler):
             return f"Error: Path not found: {search_root}"
 
         ignore_dirs = {
-            ".git", "__pycache__", "node_modules", ".venv", "venv",
-            "dist", "build", ".mypy_cache",
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            ".mypy_cache",
         }
         matches: list[Path] = []
 
@@ -252,6 +258,7 @@ class ExecHandler(BaseHandler):
                     break
         else:
             loop_ff = asyncio.get_event_loop()
+
             def _ff_walk() -> list[Path]:
                 found: list[Path] = []
                 for root, dirs, files in os.walk(search_root):
@@ -262,6 +269,7 @@ class ExecHandler(BaseHandler):
                             if len(found) >= max_results:
                                 return found
                 return found
+
             matches = await loop_ff.run_in_executor(None, _ff_walk)
 
         if not matches:

@@ -63,11 +63,13 @@ _CALL_TIMEOUT = 120.0
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class McpServerConfig:
     """Configuration for a single stdio-based MCP server."""
-    name: str                             # logical name, used for tool namespacing
-    command: str                          # executable to launch
+
+    name: str  # logical name, used for tool namespacing
+    command: str  # executable to launch
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
     # If true, the server is skipped if the command is not found on PATH
@@ -77,6 +79,7 @@ class McpServerConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 # JSON-RPC helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _make_request(id: int, method: str, params: Optional[dict] = None) -> bytes:
     msg: dict[str, Any] = {"jsonrpc": "2.0", "id": id, "method": method}
@@ -96,6 +99,7 @@ def _make_notification(method: str, params: Optional[dict] = None) -> bytes:
 # Single MCP server process
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class _McpServerProcess:
     """
     Manages a single stdio MCP server subprocess.
@@ -111,8 +115,8 @@ class _McpServerProcess:
         self._next_id: int = 1
         self._pending: dict[int, asyncio.Future] = {}
         self._reader_task: Optional[asyncio.Task] = None
-        self._lock = asyncio.Lock()          # serialise writes to stdin
-        self._tools: list[dict] = []         # raw MCP tool descriptors
+        self._lock = asyncio.Lock()  # serialise writes to stdin
+        self._tools: list[dict] = []  # raw MCP tool descriptors
         self._started = False
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
@@ -143,9 +147,7 @@ class _McpServerProcess:
             return False
         self._tools = await self._list_tools()
         self._started = True
-        logger.debug(
-            "MCP server %r ready — %d tools", self.cfg.name, len(self._tools)
-        )
+        logger.debug("MCP server %r ready — %d tools", self.cfg.name, len(self._tools))
         return True
 
     async def stop(self) -> None:
@@ -199,9 +201,7 @@ class _McpServerProcess:
 
     # ── JSON-RPC send/receive ─────────────────────────────────────────────────
 
-    async def _send_request(
-        self, method: str, params: Optional[dict], timeout: float
-    ) -> dict:
+    async def _send_request(self, method: str, params: Optional[dict], timeout: float) -> dict:
         assert self._proc and self._proc.stdin
         req_id = self._next_id
         self._next_id += 1
@@ -238,9 +238,7 @@ class _McpServerProcess:
             return False
 
         if "error" in resp:
-            logger.debug(
-                "MCP initialize error for %r: %s", self.cfg.name, resp["error"]
-            )
+            logger.debug("MCP initialize error for %r: %s", self.cfg.name, resp["error"])
             return False
 
         # Acknowledge initialization
@@ -249,9 +247,7 @@ class _McpServerProcess:
 
     async def _list_tools(self) -> list[dict]:
         try:
-            resp = await self._send_request(
-                "tools/list", None, timeout=_INIT_TIMEOUT
-            )
+            resp = await self._send_request("tools/list", None, timeout=_INIT_TIMEOUT)
         except Exception as exc:
             logger.debug("MCP tools/list failed for %r: %s", self.cfg.name, exc)
             return []
@@ -313,27 +309,27 @@ class _McpServerProcess:
             # Namespace: mcp__{server_name}__{tool_name}
             namespaced = f"{_MCP_TOOL_PREFIX}{self.cfg.name}__{raw_name}"
             input_schema = tool.get("inputSchema", {})
-            schemas.append({
-                "type": "function",
-                "function": {
-                    "name": namespaced,
-                    "description": (
-                        f"[MCP/{self.cfg.name}] "
-                        + tool.get("description", "")
-                    ),
-                    "parameters": {
-                        "type": input_schema.get("type", "object"),
-                        "properties": input_schema.get("properties", {}),
-                        "required": input_schema.get("required", []),
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": namespaced,
+                        "description": (f"[MCP/{self.cfg.name}] " + tool.get("description", "")),
+                        "parameters": {
+                            "type": input_schema.get("type", "object"),
+                            "properties": input_schema.get("properties", {}),
+                            "required": input_schema.get("required", []),
+                        },
                     },
-                },
-            })
+                }
+            )
         return schemas
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # McpClient — multi-server manager
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class McpClient:
     """
@@ -374,9 +370,7 @@ class McpClient:
                     " (optional — continuing)" if cfg.optional else "",
                 )
                 if not cfg.optional:
-                    raise RuntimeError(
-                        f"Required MCP server '{cfg.name}' failed to start."
-                    )
+                    raise RuntimeError(f"Required MCP server '{cfg.name}' failed to start.")
                 failed.append(cfg.name)
 
         for name in failed:
@@ -411,13 +405,13 @@ class McpClient:
         if not namespaced_name.startswith(_MCP_TOOL_PREFIX):
             return f"[MCP] '{namespaced_name}' is not a namespaced MCP tool."
 
-        remainder = namespaced_name[len(_MCP_TOOL_PREFIX):]  # "server_name__tool_name"
+        remainder = namespaced_name[len(_MCP_TOOL_PREFIX) :]  # "server_name__tool_name"
         sep = remainder.find("__")
         if sep == -1:
             return f"[MCP] Malformed tool name: '{namespaced_name}'"
 
         server_name = remainder[:sep]
-        tool_name   = remainder[sep + 2:]
+        tool_name = remainder[sep + 2 :]
 
         proc = self._servers.get(server_name)
         if proc is None:

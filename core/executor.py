@@ -33,25 +33,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Sandbox
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Shell command patterns that are unconditionally blocked
 _BLOCKED_CMD_PATTERNS: list[str] = [
-    r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f\s+/",        # rm -rf /
-    r"sudo\s+rm",                               # sudo rm anything
-    r"\bmkfs\b",                                # format filesystem
-    r"\bdd\b.*\bif=",                           # dd if= (disk overwrite)
-    r":\(\)\s*\{.*\}",                          # fork bomb
-    r"chmod\s+-[rR]\s+777\s+/",                # chmod 777 everything
-    r">\s*/etc/passwd",                         # clobber system files
+    r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f\s+/",  # rm -rf /
+    r"sudo\s+rm",  # sudo rm anything
+    r"\bmkfs\b",  # format filesystem
+    r"\bdd\b.*\bif=",  # dd if= (disk overwrite)
+    r":\(\)\s*\{.*\}",  # fork bomb
+    r"chmod\s+-[rR]\s+777\s+/",  # chmod 777 everything
+    r">\s*/etc/passwd",  # clobber system files
     r">\s*/etc/shadow",
-    r"curl\s+.*\|\s*(ba)?sh",                  # curl | bash
-    r"wget\s+.*\|\s*(ba)?sh",                  # wget | bash
-    r"\|\s*(ba)?sh\s*<",                        # pipe to shell
-    r"nc\s+-[a-zA-Z]*e\b",                     # netcat exec
+    r"curl\s+.*\|\s*(ba)?sh",  # curl | bash
+    r"wget\s+.*\|\s*(ba)?sh",  # wget | bash
+    r"\|\s*(ba)?sh\s*<",  # pipe to shell
+    r"nc\s+-[a-zA-Z]*e\b",  # netcat exec
 ]
 
 
@@ -97,9 +96,7 @@ class Sandbox:
         return True, ""
 
     def describe(self) -> str:
-        return (
-            f"Sandbox(workspace={self.workspace}, safe_mode={self.safe_mode})"
-        )
+        return f"Sandbox(workspace={self.workspace}, safe_mode={self.safe_mode})"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,8 +105,19 @@ class Sandbox:
 
 # Keywords that tag a line as error-bearing when scanning combined output
 _ERROR_KEYWORDS = frozenset(
-    ["error", "exception", "traceback", "fatal", "failed", "failure",
-     "assert", "panic", "aborted", "segfault", "killed"]
+    [
+        "error",
+        "exception",
+        "traceback",
+        "fatal",
+        "failed",
+        "failure",
+        "assert",
+        "panic",
+        "aborted",
+        "segfault",
+        "killed",
+    ]
 )
 _WARN_KEYWORDS = frozenset(["warning", "warn", "deprecated"])
 
@@ -118,12 +126,12 @@ _WARN_KEYWORDS = frozenset(["warning", "warn", "deprecated"])
 class CommandResult:
     """Structured result from a shell command execution."""
 
-    command:    str
-    exit_code:  int
-    stdout:     str
-    stderr:     str
+    command: str
+    exit_code: int
+    stdout: str
+    stderr: str
     duration_s: float
-    timed_out:  bool = False
+    timed_out: bool = False
 
     # ── Derived properties ─────────────────────────────────────────────────
 
@@ -204,7 +212,9 @@ class CommandResult:
         combined = self.combined_output
         if combined:
             if len(combined) > max_chars:
-                combined = combined[:max_chars] + f"\n… [{len(combined) - max_chars:,} chars truncated]"
+                combined = (
+                    combined[:max_chars] + f"\n… [{len(combined) - max_chars:,} chars truncated]"
+                )
             parts.append(combined)
 
         return "\n".join(parts)
@@ -214,17 +224,18 @@ class CommandResult:
 # Test result model
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TestCase:
-    name:          str
-    status:        str          # "passed" | "failed" | "error" | "skipped"
-    file:          str = ""
-    duration_s:    float = 0.0
-    error_message: str = ""     # failure / error body
+    name: str
+    status: str  # "passed" | "failed" | "error" | "skipped"
+    file: str = ""
+    duration_s: float = 0.0
+    error_message: str = ""  # failure / error body
 
     def render(self) -> str:
         icon = {"passed": "✓", "failed": "✗", "error": "!", "skipped": "⊘"}.get(self.status, "?")
-        loc  = f"  [{self.file}]" if self.file else ""
+        loc = f"  [{self.file}]" if self.file else ""
         base = f"  {icon} {self.name}{loc}"
         if self.error_message:
             excerpt = self.error_message[:200].replace("\n", "\n      ")
@@ -236,14 +247,14 @@ class TestCase:
 class TestSuiteResult:
     """Aggregate result from a test run."""
 
-    framework:    str
-    passed:       int = 0
-    failed:       int = 0
-    errors:       int = 0
-    skipped:      int = 0
-    duration_s:   float = 0.0
+    framework: str
+    passed: int = 0
+    failed: int = 0
+    errors: int = 0
+    skipped: int = 0
+    duration_s: float = 0.0
     failing_tests: list[TestCase] = field(default_factory=list)
-    raw_output:   str = ""
+    raw_output: str = ""
 
     @property
     def total(self) -> int:
@@ -264,9 +275,11 @@ class TestSuiteResult:
         if self.skipped:
             parts.append(f"{self.skipped} skipped")
         total_str = f"  ({self.total} total)" if self.total > 0 else ""
-        time_str  = f"  in {self.duration_s:.2f}s" if self.duration_s > 0 else ""
+        time_str = f"  in {self.duration_s:.2f}s" if self.duration_s > 0 else ""
         icon = "✓" if self.success else "✗"
-        return f"{icon} [{self.framework}]  {',  '.join(parts) or 'no tests ran'}{total_str}{time_str}"
+        return (
+            f"{icon} [{self.framework}]  {',  '.join(parts) or 'no tests ran'}{total_str}{time_str}"
+        )
 
     def to_agent_str(self) -> str:
         lines = [self.summary_line()]
@@ -290,13 +303,14 @@ class TestSuiteResult:
 # ── pytest ────────────────────────────────────────────────────────────────────
 
 # Match each count independently (pytest order varies: "3 failed, 12 passed in 0.42s")
-_PY_PASSED  = re.compile(r"(\d+)\s+passed")
-_PY_FAILED  = re.compile(r"(\d+)\s+failed")
-_PY_ERRORS  = re.compile(r"(\d+)\s+error")
+_PY_PASSED = re.compile(r"(\d+)\s+passed")
+_PY_FAILED = re.compile(r"(\d+)\s+failed")
+_PY_ERRORS = re.compile(r"(\d+)\s+error")
 _PY_SKIPPED = re.compile(r"(\d+)\s+skipped")
-_PY_DURATION= re.compile(r"in\s+([\d.]+)s")
+_PY_DURATION = re.compile(r"in\s+([\d.]+)s")
 _PY_FAIL_HEAD = re.compile(r"^FAILED\s+(.+?)(?:\s+-\s+(.+))?$", re.MULTILINE)
-_PY_SHORT_TEST= re.compile(r"^(.+?)::\S+\s+(PASSED|FAILED|ERROR|SKIPPED)", re.MULTILINE)
+_PY_SHORT_TEST = re.compile(r"^(.+?)::\S+\s+(PASSED|FAILED|ERROR|SKIPPED)", re.MULTILINE)
+
 
 def parse_pytest_output(output: str) -> TestSuiteResult:
     result = TestSuiteResult(framework="pytest", raw_output=output)
@@ -308,20 +322,20 @@ def parse_pytest_output(output: str) -> TestSuiteResult:
     m_d = _PY_DURATION.search(output)
 
     if m_p:
-        result.passed   = int(m_p.group(1))
+        result.passed = int(m_p.group(1))
     if m_f:
-        result.failed   = int(m_f.group(1))
+        result.failed = int(m_f.group(1))
     if m_e:
-        result.errors   = int(m_e.group(1))
+        result.errors = int(m_e.group(1))
     if m_s:
-        result.skipped  = int(m_s.group(1))
+        result.skipped = int(m_s.group(1))
     if m_d:
         result.duration_s = float(m_d.group(1))
 
     # Collect FAILED lines
     for m2 in _PY_FAIL_HEAD.finditer(output):
         name = m2.group(1).strip()
-        msg  = (m2.group(2) or "").strip()
+        msg = (m2.group(2) or "").strip()
         result.failing_tests.append(TestCase(name=name, status="failed", error_message=msg))
 
     # If FAILED lines not found, fall back to short-form
@@ -344,8 +358,12 @@ def parse_pytest_output(output: str) -> TestSuiteResult:
                 if short and short in header:
                     # Grab relevant error lines
                     err_lines = [
-                        l for l in section.splitlines()
-                        if any(kw in l.lower() for kw in ("assertionerror", "error:", "assert ", "e   "))
+                        l
+                        for l in section.splitlines()
+                        if any(
+                            kw in l.lower()
+                            for kw in ("assertionerror", "error:", "assert ", "e   ")
+                        )
                     ]
                     if err_lines and not tc.error_message:
                         tc.error_message = "\n".join(err_lines[:8])
@@ -358,18 +376,19 @@ def parse_pytest_output(output: str) -> TestSuiteResult:
 _JEST_SUMMARY = re.compile(
     r"Tests?:\s+(?:(\d+) failed[,\s]*)?(?:(\d+) passed[,\s]*)?(?:(\d+) skipped[,\s]*)?(\d+) total"
 )
-_JEST_FAIL    = re.compile(r"^\s+●\s+(.+)$", re.MULTILINE)
-_JEST_TIME    = re.compile(r"Time:\s+([\d.]+)\s*s")
+_JEST_FAIL = re.compile(r"^\s+●\s+(.+)$", re.MULTILINE)
+_JEST_TIME = re.compile(r"Time:\s+([\d.]+)\s*s")
+
 
 def parse_jest_output(output: str) -> TestSuiteResult:
     result = TestSuiteResult(framework="jest", raw_output=output)
     m = _JEST_SUMMARY.search(output)
     if m:
-        result.failed  = int(m.group(1) or 0)
-        result.passed  = int(m.group(2) or 0)
+        result.failed = int(m.group(1) or 0)
+        result.passed = int(m.group(2) or 0)
         result.skipped = int(m.group(3) or 0)
-        total          = int(m.group(4) or 0)
-        result.errors  = max(0, total - result.passed - result.failed - result.skipped)
+        total = int(m.group(4) or 0)
+        result.errors = max(0, total - result.passed - result.failed - result.skipped)
     mt = _JEST_TIME.search(output)
     if mt:
         result.duration_s = float(mt.group(1))
@@ -382,16 +401,19 @@ def parse_jest_output(output: str) -> TestSuiteResult:
 
 # ── cargo test ────────────────────────────────────────────────────────────────
 
-_CARGO_SUMMARY = re.compile(r"test result:\s+(ok|FAILED)\.\s+(\d+) passed;\s+(\d+) failed;\s+(\d+) ignored.*?([\d.]+)s")
-_CARGO_FAIL    = re.compile(r"^test\s+(\S+)\s+\.\.\.\s+FAILED$", re.MULTILINE)
+_CARGO_SUMMARY = re.compile(
+    r"test result:\s+(ok|FAILED)\.\s+(\d+) passed;\s+(\d+) failed;\s+(\d+) ignored.*?([\d.]+)s"
+)
+_CARGO_FAIL = re.compile(r"^test\s+(\S+)\s+\.\.\.\s+FAILED$", re.MULTILINE)
+
 
 def parse_cargo_output(output: str) -> TestSuiteResult:
     result = TestSuiteResult(framework="cargo-test", raw_output=output)
     m = _CARGO_SUMMARY.search(output)
     if m:
-        result.passed     = int(m.group(2))
-        result.failed     = int(m.group(3))
-        result.skipped    = int(m.group(4))
+        result.passed = int(m.group(2))
+        result.failed = int(m.group(3))
+        result.skipped = int(m.group(4))
         result.duration_s = float(m.group(5))
     for m2 in _CARGO_FAIL.finditer(output):
         result.failing_tests.append(TestCase(name=m2.group(1), status="failed"))
@@ -400,9 +422,10 @@ def parse_cargo_output(output: str) -> TestSuiteResult:
 
 # ── go test ───────────────────────────────────────────────────────────────────
 
-_GO_PASS  = re.compile(r"^--- PASS:\s+(\S+)\s+\(([\d.]+)s\)", re.MULTILINE)
-_GO_FAIL  = re.compile(r"^--- FAIL:\s+(\S+)\s+\(([\d.]+)s\)", re.MULTILINE)
+_GO_PASS = re.compile(r"^--- PASS:\s+(\S+)\s+\(([\d.]+)s\)", re.MULTILINE)
+_GO_FAIL = re.compile(r"^--- FAIL:\s+(\S+)\s+\(([\d.]+)s\)", re.MULTILINE)
 _GO_FINAL = re.compile(r"^(ok|FAIL)\s+\S+\s+([\d.]+)s", re.MULTILINE)
+
 
 def parse_go_test_output(output: str) -> TestSuiteResult:
     result = TestSuiteResult(framework="go-test", raw_output=output)
@@ -423,8 +446,9 @@ def parse_go_test_output(output: str) -> TestSuiteResult:
 
 _VITEST_SUMMARY = re.compile(r"Tests\s+(\d+) failed\s+\|\s+(\d+) passed")
 
+
 def parse_vitest_output(output: str) -> TestSuiteResult:
-    result = parse_jest_output(output)   # structure is similar
+    result = parse_jest_output(output)  # structure is similar
     result.framework = "vitest"
     m = _VITEST_SUMMARY.search(output)
     if m:
@@ -434,6 +458,7 @@ def parse_vitest_output(output: str) -> TestSuiteResult:
 
 
 # ── Unified dispatcher ────────────────────────────────────────────────────────
+
 
 def parse_test_output(output: str, framework: str) -> TestSuiteResult:
     """Dispatch raw test output to the appropriate parser."""
@@ -466,6 +491,7 @@ def parse_test_output(output: str, framework: str) -> TestSuiteResult:
 # Test framework detection & command building
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def detect_test_framework(workspace: Path) -> Optional[str]:
     """
     Identify the test framework used by inspecting project files.
@@ -484,8 +510,9 @@ def detect_test_framework(workspace: Path) -> Optional[str]:
     if pkg.exists():
         try:
             import json
+
             data = json.loads(pkg.read_text())
-            scripts  = data.get("scripts", {})
+            scripts = data.get("scripts", {})
             dev_deps = {**data.get("devDependencies", {}), **data.get("dependencies", {})}
             if "vitest" in dev_deps:
                 return "vitest"
@@ -565,6 +592,7 @@ def build_test_command(
 # ─────────────────────────────────────────────────────────────────────────────
 # Formatter detection & command building
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def detect_formatters(workspace: Path) -> list[str]:
     """Return available formatters for this workspace, in preference order."""
@@ -662,6 +690,7 @@ def build_formatter_command(
 # Retry helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class RetryPolicy:
     """
@@ -670,27 +699,31 @@ class RetryPolicy:
     vs *permanent* (not worth retrying).
     """
 
-    max_retries:      int   = 2
+    max_retries: int = 2
     # Patterns in combined output that indicate a permanent failure
-    permanent_patterns: list[str] = field(default_factory=lambda: [
-        r"syntax error",
-        r"modulenotfounderror",
-        r"importerror",
-        r"nameerror",
-        r"typeerror",
-        r"no such file",
-        r"command not found",
-        r"permission denied",
-    ])
+    permanent_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"syntax error",
+            r"modulenotfounderror",
+            r"importerror",
+            r"nameerror",
+            r"typeerror",
+            r"no such file",
+            r"command not found",
+            r"permission denied",
+        ]
+    )
     # Patterns that indicate a transient failure worth retrying
-    transient_patterns: list[str] = field(default_factory=lambda: [
-        r"timeout",
-        r"connection refused",
-        r"temporarily unavailable",
-        r"try again",
-        r"rate limit",
-        r"lock.*held",
-    ])
+    transient_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"timeout",
+            r"connection refused",
+            r"temporarily unavailable",
+            r"try again",
+            r"rate limit",
+            r"lock.*held",
+        ]
+    )
 
     def __post_init__(self) -> None:
         self._perm_re = [re.compile(p, re.IGNORECASE) for p in self.permanent_patterns]

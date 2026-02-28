@@ -21,20 +21,28 @@ from typing import Optional
 
 from nvagent.config import Config
 
-
 # Files that are always read for project understanding
 KEY_FILES = [
-    "README.md", "README.rst", "README.txt",
-    "pyproject.toml", "setup.py", "setup.cfg",
-    "package.json", "tsconfig.json",
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "package.json",
+    "tsconfig.json",
     "Cargo.toml",
     "go.mod",
-    "pom.xml", "build.gradle",
-    "Makefile", "CMakeLists.txt",
-    "docker-compose.yml", "docker-compose.yaml",
+    "pom.xml",
+    "build.gradle",
+    "Makefile",
+    "CMakeLists.txt",
+    "docker-compose.yml",
+    "docker-compose.yaml",
     "Dockerfile",
     ".env.example",
-    "ARCHITECTURE.md", "CONTRIBUTING.md",
+    "ARCHITECTURE.md",
+    "CONTRIBUTING.md",
 ]
 
 SYSTEM_PROMPT_BASE = """You are nvagent, an expert coding assistant powered by NVIDIA NIM models.
@@ -190,19 +198,19 @@ def detect_project_type(workspace: Path) -> str:
 
     checks = [
         ("pyproject.toml", "Python (pyproject)"),
-        ("setup.py",        "Python (setup.py)"),
+        ("setup.py", "Python (setup.py)"),
         ("requirements.txt", "Python"),
-        ("package.json",    "Node.js/JavaScript"),
-        ("tsconfig.json",   "TypeScript"),
-        ("Cargo.toml",      "Rust"),
-        ("go.mod",          "Go"),
-        ("pom.xml",         "Java (Maven)"),
-        ("build.gradle",    "Java/Kotlin (Gradle)"),
-        ("CMakeLists.txt",  "C/C++ (CMake)"),
-        ("Makefile",        "Make-based"),
-        ("docker-compose.yml",  "Docker Compose"),
+        ("package.json", "Node.js/JavaScript"),
+        ("tsconfig.json", "TypeScript"),
+        ("Cargo.toml", "Rust"),
+        ("go.mod", "Go"),
+        ("pom.xml", "Java (Maven)"),
+        ("build.gradle", "Java/Kotlin (Gradle)"),
+        ("CMakeLists.txt", "C/C++ (CMake)"),
+        ("Makefile", "Make-based"),
+        ("docker-compose.yml", "Docker Compose"),
         ("docker-compose.yaml", "Docker Compose"),
-        ("Dockerfile",      "Docker"),
+        ("Dockerfile", "Docker"),
     ]
 
     indicators = [label for filename, label in checks if filename in _ws_files]
@@ -216,7 +224,9 @@ def read_key_file(path: Path, max_bytes: int = 4096) -> Optional[str]:
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
         if len(content) > max_bytes:
-            content = content[:max_bytes] + f"\n... [truncated, {len(content) - max_bytes} more bytes]"
+            content = (
+                content[:max_bytes] + f"\n... [truncated, {len(content) - max_bytes} more bytes]"
+            )
         return content
     except Exception:
         return None
@@ -228,7 +238,10 @@ def get_git_summary(workspace: Path) -> str:
         # Check if git repo
         result = subprocess.run(
             ["git", "rev-parse", "--git-dir"],
-            capture_output=True, text=True, cwd=workspace, timeout=5
+            capture_output=True,
+            text=True,
+            cwd=workspace,
+            timeout=5,
         )
         if result.returncode != 0:
             return "Not a git repository."
@@ -236,16 +249,20 @@ def get_git_summary(workspace: Path) -> str:
         # Run branch, status, and log in parallel
         def _run(cmd: list[str]) -> str:
             return subprocess.run(
-                cmd, capture_output=True, text=True, cwd=workspace, timeout=5,
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=workspace,
+                timeout=5,
             ).stdout.strip()
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
             f_branch = ex.submit(_run, ["git", "branch", "--show-current"])
             f_status = ex.submit(_run, ["git", "status", "--short"])
-            f_log    = ex.submit(_run, ["git", "log", "--oneline", "-5"])
+            f_log = ex.submit(_run, ["git", "log", "--oneline", "-5"])
         branch = f_branch.result()
         status = f_status.result()
-        log    = f_log.result()
+        log = f_log.result()
 
         parts = [f"Branch: {branch}"]
         if status:
@@ -324,6 +341,7 @@ def estimate_tokens(text: str) -> int:
 # Budget-aware context assembly
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class ContextBudget:
     """
     Token budget tracker for context assembly.
@@ -395,7 +413,7 @@ def assemble_context(
     from nvagent.core.symbols import extract_symbols
 
     budget = ContextBudget(max_tokens)
-    parts:  list[str] = []
+    parts: list[str] = []
 
     def _add(text: str) -> bool:
         if budget.consume(text):
@@ -419,13 +437,16 @@ def assemble_context(
     with concurrent.futures.ThreadPoolExecutor(max_workers=_n_workers) as _ex:
         _f_type = _ex.submit(detect_project_type, workspace)
         _f_tree = _ex.submit(
-            build_file_tree, workspace,
-            config.context.ignore_patterns, 4, config.agent.max_context_files,
+            build_file_tree,
+            workspace,
+            config.context.ignore_patterns,
+            4,
+            config.agent.max_context_files,
         )
         _kf_results = list(_ex.map(_try_read_key, KEY_FILES))
 
     project_type = _f_type.result()
-    tree         = _f_tree.result()
+    tree = _f_tree.result()
     _add(f"**Project type:** {project_type}\n")
 
     if tree:
@@ -476,8 +497,8 @@ def assemble_context(
                 all_paths.append(rp)
                 seen_s.add(rs)
 
-    active_file_parts:  list[str] = []
-    symbol_only_parts:  list[str] = []
+    active_file_parts: list[str] = []
+    symbol_only_parts: list[str] = []
 
     # Read all active/retrieved files concurrently in a thread pool.
     def _read_af(fpath: Path) -> tuple[Path, str | None]:
@@ -517,13 +538,13 @@ def assemble_context(
 
     if active_file_parts:
         parts.append(
-            "\n## Active Files (recently read/modified)\n"
-            + "\n\n".join(active_file_parts) + "\n"
+            "\n## Active Files (recently read/modified)\n" + "\n\n".join(active_file_parts) + "\n"
         )
     if symbol_only_parts:
         parts.append(
             "\n## Files (symbols only — context budget reached)\n"
-            + "\n\n".join(symbol_only_parts) + "\n"
+            + "\n\n".join(symbol_only_parts)
+            + "\n"
         )
 
     return "\n".join(parts)
@@ -533,7 +554,9 @@ def assemble_context(
 # Active-file context injection (multi-file awareness)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_PATH_LIKE = re.compile(r'[\w./\-]+\.(?:py|ts|js|tsx|jsx|go|rs|java|c|cpp|h|hpp|rb|sh|yaml|yml|toml|json|md|txt|cfg|ini|env)')
+_PATH_LIKE = re.compile(
+    r"[\w./\-]+\.(?:py|ts|js|tsx|jsx|go|rs|java|c|cpp|h|hpp|rb|sh|yaml|yml|toml|json|md|txt|cfg|ini|env)"
+)
 
 
 def extract_active_files(messages: list[dict], workspace: Path) -> list[Path]:
@@ -577,14 +600,19 @@ def build_active_files_context(
     total = 0
     for fpath in active_paths:
         if total >= max_total_bytes:
-            parts.append(f"... ({len(active_paths) - len(parts)} more active files — context limit reached)")
+            parts.append(
+                f"... ({len(active_paths) - len(parts)} more active files — context limit reached)"
+            )
             break
         try:
             content = fpath.read_text(encoding="utf-8", errors="replace")
         except Exception:
             continue
         if len(content) > max_bytes_each:
-            content = content[:max_bytes_each] + f"\n... [truncated, {len(content) - max_bytes_each} more bytes]"
+            content = (
+                content[:max_bytes_each]
+                + f"\n... [truncated, {len(content) - max_bytes_each} more bytes]"
+            )
         rel = fpath.relative_to(workspace) if fpath.is_relative_to(workspace) else fpath
         parts.append(f"### {rel}\n```\n{content}\n```")
         total += len(content)

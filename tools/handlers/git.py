@@ -31,10 +31,10 @@ class GitHandler(BaseHandler):
                 return -1, ""
 
         cmds = [
-            ("Branch",  ["git", "branch", "--show-current"]),
-            ("Status",  ["git", "status", "--short"]),
+            ("Branch", ["git", "branch", "--show-current"]),
+            ("Status", ["git", "status", "--short"]),
             ("Stashes", ["git", "stash", "list", "--oneline"]),
-            ("Recent",  ["git", "log", "--oneline", "-10"]),
+            ("Recent", ["git", "log", "--oneline", "-10"]),
         ]
         outcomes = await asyncio.gather(*[_git_run(cmd) for _, cmd in cmds])
         lines = [
@@ -89,7 +89,10 @@ class GitHandler(BaseHandler):
         str_paths = [str(p) for p in paths]
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "add", "--", *str_paths,
+                "git",
+                "add",
+                "--",
+                *str_paths,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.ctx.workspace,
@@ -98,7 +101,9 @@ class GitHandler(BaseHandler):
             if proc.returncode != 0:
                 return f"git add failed: {stderr.decode('utf-8', errors='replace').strip()}"
             status_proc = await asyncio.create_subprocess_exec(
-                "git", "status", "--short",
+                "git",
+                "status",
+                "--short",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.ctx.workspace,
@@ -126,8 +131,10 @@ class GitHandler(BaseHandler):
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
             if proc.returncode != 0:
-                err = (stderr.decode("utf-8", errors="replace") or
-                       stdout.decode("utf-8", errors="replace")).strip()
+                err = (
+                    stderr.decode("utf-8", errors="replace")
+                    or stdout.decode("utf-8", errors="replace")
+                ).strip()
                 return f"git commit failed: {err}"
             return f"✓ Committed:\n{stdout.decode('utf-8', errors='replace').strip()}"
         except Exception as e:

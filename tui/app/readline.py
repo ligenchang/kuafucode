@@ -7,6 +7,7 @@ from pathlib import Path
 
 try:
     import readline as _readline
+
     _READLINE_AVAILABLE = True
 except ImportError:
     _readline = None  # type: ignore[assignment]
@@ -46,13 +47,13 @@ def save_readline_history() -> None:
 
 def rl_prompt(colored: str) -> str:
     """Wrap ANSI escape sequences in readline non-printing markers (\001...\002).
-    
+
     Without these markers readline miscounts the visible prompt width, causing
     the cursor to land in the wrong column after up-arrow edits.
-    
+
     Args:
         colored: Prompt string with ANSI color codes.
-    
+
     Returns:
         Prompt string with readline non-printing markers.
     """

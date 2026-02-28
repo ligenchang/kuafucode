@@ -11,21 +11,21 @@ from __future__ import annotations
 
 _PRICING: dict[str, dict[str, float]] = {
     # minimax
-    "minimax-m2":         {"input": 0.40, "output": 1.60},
-    "minimax-text":       {"input": 0.40, "output": 1.60},
+    "minimax-m2": {"input": 0.40, "output": 1.60},
+    "minimax-text": {"input": 0.40, "output": 1.60},
     # kimi
-    "kimi-k2":            {"input": 0.50, "output": 2.50},
+    "kimi-k2": {"input": 0.50, "output": 2.50},
     # qwen
-    "qwen3.5":            {"input": 2.00, "output": 8.00},
-    "qwq":                {"input": 2.00, "output": 8.00},
+    "qwen3.5": {"input": 2.00, "output": 8.00},
+    "qwq": {"input": 2.00, "output": 8.00},
     # glm
-    "glm5":               {"input": 0.50, "output": 2.00},
-    "glm4":               {"input": 0.50, "output": 2.00},
+    "glm5": {"input": 0.50, "output": 2.00},
+    "glm4": {"input": 0.50, "output": 2.00},
     # llama nemotron
-    "nemotron":           {"input": 1.00, "output": 4.00},
+    "nemotron": {"input": 1.00, "output": 4.00},
     "llama-3.1-nemotron": {"input": 1.00, "output": 4.00},
     # default fallback (blended estimate)
-    "default":            {"input": 1.00, "output": 3.00},
+    "default": {"input": 1.00, "output": 3.00},
 }
 
 
@@ -37,7 +37,4 @@ def cost_usd(input_tokens: int, output_tokens: int, model: str) -> float:
         if key != "default" and key in model_lower:
             rates = price
             break
-    return (
-        input_tokens  * rates["input"]  / 1_000_000
-        + output_tokens * rates["output"] / 1_000_000
-    )
+    return input_tokens * rates["input"] / 1_000_000 + output_tokens * rates["output"] / 1_000_000

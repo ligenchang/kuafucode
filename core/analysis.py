@@ -22,31 +22,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # AnalysisIssue
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class AnalysisIssue:
-    file:     str
-    line:     int
-    col:      int
-    code:     str          # e.g. "E501", "TS2345", "no-unused-vars"
-    message:  str
-    severity: str          # "error" | "warning" | "info" | "note"
-    tool:     str = ""     # "ruff" | "mypy" | "pyright" | "tsc" | "eslint"
+    file: str
+    line: int
+    col: int
+    code: str  # e.g. "E501", "TS2345", "no-unused-vars"
+    message: str
+    severity: str  # "error" | "warning" | "info" | "note"
+    tool: str = ""  # "ruff" | "mypy" | "pyright" | "tsc" | "eslint"
 
     def render(self, workspace: Optional[Path] = None) -> str:
         try:
             ws_r = workspace.resolve() if workspace else None
-            rel  = Path(self.file).relative_to(ws_r) if ws_r else Path(self.file)
+            rel = Path(self.file).relative_to(ws_r) if ws_r else Path(self.file)
         except ValueError:
             rel = Path(self.file)
         code_part = f" [{self.code}]" if self.code else ""
-        return (
-            f"{rel}:{self.line}:{self.col}  {self.severity.upper()}{code_part}  {self.message}"
-        )
+        return f"{rel}:{self.line}:{self.col}  {self.severity.upper()}{code_part}  {self.message}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -54,10 +52,10 @@ class AnalysisIssue:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _SUPPORTED_LINTERS = [
-    "ruff",    # Python — fast, covers flake8 + isort + pyupgrade rules
-    "mypy",    # Python — type checking
-    "pyright", # Python — type checking (alternative to mypy)
-    "tsc",     # TypeScript
+    "ruff",  # Python — fast, covers flake8 + isort + pyupgrade rules
+    "mypy",  # Python — type checking
+    "pyright",  # Python — type checking (alternative to mypy)
+    "tsc",  # TypeScript
     "eslint",  # JavaScript / TypeScript
 ]
 
@@ -80,6 +78,7 @@ def detect_linters(workspace: Optional[Path] = None) -> list[str]:
 # Internal helper
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _run(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 60) -> tuple[str, str, int]:
     """Run *cmd* and return (stdout, stderr, returncode)."""
     try:
@@ -100,6 +99,7 @@ def _run(cmd: list[str], cwd: Optional[Path] = None, timeout: int = 60) -> tuple
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-tool runners
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _run_ruff(
     workspace: Path,
@@ -124,16 +124,18 @@ def _run_ruff(
 
     for item in data:
         location = item.get("location", {})
-        end_loc  = item.get("end_location", {})
-        issues.append(AnalysisIssue(
-            file     = item.get("filename", ""),
-            line     = location.get("row", 0),
-            col      = location.get("column", 0),
-            code     = item.get("code", ""),
-            message  = item.get("message", ""),
-            severity = "warning" if item.get("code", "").startswith("W") else "error",
-            tool     = "ruff",
-        ))
+        end_loc = item.get("end_location", {})
+        issues.append(
+            AnalysisIssue(
+                file=item.get("filename", ""),
+                line=location.get("row", 0),
+                col=location.get("column", 0),
+                code=item.get("code", ""),
+                message=item.get("message", ""),
+                severity="warning" if item.get("code", "").startswith("W") else "error",
+                tool="ruff",
+            )
+        )
     return issues
 
 
@@ -162,15 +164,17 @@ def _run_mypy(
     for line in (stdout + "\n" + stderr).splitlines():
         m = pattern.match(line.strip())
         if m:
-            issues.append(AnalysisIssue(
-                file     = m.group(1),
-                line     = int(m.group(2)),
-                col      = int(m.group(3)),
-                code     = m.group(6) or "",
-                message  = m.group(5),
-                severity = m.group(4),
-                tool     = "mypy",
-            ))
+            issues.append(
+                AnalysisIssue(
+                    file=m.group(1),
+                    line=int(m.group(2)),
+                    col=int(m.group(3)),
+                    code=m.group(6) or "",
+                    message=m.group(5),
+                    severity=m.group(4),
+                    tool="mypy",
+                )
+            )
     return issues
 
 
@@ -203,18 +207,20 @@ def _run_pyright(
         return issues
 
     for diag in data.get("generalDiagnostics", []):
-        rng  = diag.get("range", {})
+        rng = diag.get("range", {})
         start = rng.get("start", {})
-        sev   = diag.get("severity", "error")
-        issues.append(AnalysisIssue(
-            file     = diag.get("file", ""),
-            line     = start.get("line", 0) + 1,   # pyright is 0-indexed
-            col      = start.get("character", 0) + 1,
-            code     = diag.get("rule", ""),
-            message  = diag.get("message", ""),
-            severity = sev,
-            tool     = "pyright",
-        ))
+        sev = diag.get("severity", "error")
+        issues.append(
+            AnalysisIssue(
+                file=diag.get("file", ""),
+                line=start.get("line", 0) + 1,  # pyright is 0-indexed
+                col=start.get("character", 0) + 1,
+                code=diag.get("rule", ""),
+                message=diag.get("message", ""),
+                severity=sev,
+                tool="pyright",
+            )
+        )
     return issues
 
 
@@ -237,15 +243,17 @@ def _run_tsc(
     for line in (stdout + "\n" + stderr).splitlines():
         m = pattern.match(line.strip())
         if m:
-            issues.append(AnalysisIssue(
-                file     = m.group(1),
-                line     = int(m.group(2)),
-                col      = int(m.group(3)),
-                code     = m.group(5),
-                message  = m.group(6),
-                severity = m.group(4),
-                tool     = "tsc",
-            ))
+            issues.append(
+                AnalysisIssue(
+                    file=m.group(1),
+                    line=int(m.group(2)),
+                    col=int(m.group(3)),
+                    code=m.group(5),
+                    message=m.group(6),
+                    severity=m.group(4),
+                    tool="tsc",
+                )
+            )
     return issues
 
 
@@ -279,15 +287,17 @@ def _run_eslint(
     for file_result in data:
         fpath = file_result.get("filePath", "")
         for msg in file_result.get("messages", []):
-            issues.append(AnalysisIssue(
-                file     = fpath,
-                line     = msg.get("line", 0),
-                col      = msg.get("column", 0),
-                code     = msg.get("ruleId") or "",
-                message  = msg.get("message", ""),
-                severity = _sev.get(msg.get("severity", 2), "error"),
-                tool     = "eslint",
-            ))
+            issues.append(
+                AnalysisIssue(
+                    file=fpath,
+                    line=msg.get("line", 0),
+                    col=msg.get("column", 0),
+                    code=msg.get("ruleId") or "",
+                    message=msg.get("message", ""),
+                    severity=_sev.get(msg.get("severity", 2), "error"),
+                    tool="eslint",
+                )
+            )
     return issues
 
 
@@ -296,11 +306,11 @@ def _run_eslint(
 # ─────────────────────────────────────────────────────────────────────────────
 
 _TOOL_RUNNERS = {
-    "ruff":    _run_ruff,
-    "mypy":    _run_mypy,
+    "ruff": _run_ruff,
+    "mypy": _run_mypy,
     "pyright": _run_pyright,
-    "tsc":     _run_tsc,
-    "eslint":  _run_eslint,
+    "tsc": _run_tsc,
+    "eslint": _run_eslint,
 }
 
 
@@ -317,9 +327,7 @@ def run_analysis(
     """
     tool = tool.lower()
     if tool not in _TOOL_RUNNERS:
-        raise ValueError(
-            f"Unknown tool {tool!r}. Supported: {', '.join(_TOOL_RUNNERS)}"
-        )
+        raise ValueError(f"Unknown tool {tool!r}. Supported: {', '.join(_TOOL_RUNNERS)}")
     runner = _TOOL_RUNNERS[tool]
     return runner(workspace, path, fix)
 
@@ -367,6 +375,7 @@ def format_issues(
     if group_by_file:
         # Group by file path
         from collections import defaultdict
+
         grouped: dict[str, list[AnalysisIssue]] = defaultdict(list)
         for issue in shown:
             grouped[issue.file].append(issue)
@@ -375,13 +384,15 @@ def format_issues(
         for fpath in sorted(grouped):
             try:
                 ws_r = workspace.resolve() if workspace else None
-                rel  = Path(fpath).relative_to(ws_r) if ws_r else Path(fpath)
+                rel = Path(fpath).relative_to(ws_r) if ws_r else Path(fpath)
             except ValueError:
                 rel = Path(fpath)
             lines.append(f"\n{rel}")
             for iss in sorted(grouped[fpath], key=lambda i: (i.line, i.col)):
                 code_part = f" [{iss.code}]" if iss.code else ""
-                sev_icon  = {"error": "✗", "warning": "⚠", "note": "·", "info": "·"}.get(iss.severity, "·")
+                sev_icon = {"error": "✗", "warning": "⚠", "note": "·", "info": "·"}.get(
+                    iss.severity, "·"
+                )
                 lines.append(
                     f"  {sev_icon} {iss.line}:{iss.col}{code_part}  {iss.message}"
                     + (f"  ({iss.tool})" if iss.tool else "")

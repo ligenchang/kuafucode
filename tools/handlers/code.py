@@ -10,12 +10,17 @@ from pathlib import Path
 from typing import Optional
 
 from nvagent.core.symbols import (
-    extract_symbols, build_symbol_context, resolve_imports,
+    extract_symbols,
+    build_symbol_context,
+    resolve_imports,
 )
 from nvagent.core.symbols import get_dependency_graph
 from nvagent.core.analysis import (
-    run_analysis, run_all_linters, detect_linters,
-    format_issues, AnalysisIssue,
+    run_analysis,
+    run_all_linters,
+    detect_linters,
+    format_issues,
+    AnalysisIssue,
 )
 from nvagent.tools.handlers import BaseHandler
 
@@ -24,8 +29,19 @@ class CodeHandler(BaseHandler):
     """Handles get_symbols, get_dep_graph, run_analysis."""
 
     _SOURCE_EXTS = {
-        ".py", ".ts", ".tsx", ".js", ".jsx",
-        ".go", ".rs", ".java", ".cs", ".c", ".cpp", ".h", ".hpp",
+        ".py",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".go",
+        ".rs",
+        ".java",
+        ".cs",
+        ".c",
+        ".cpp",
+        ".h",
+        ".hpp",
     }
 
     # ── get_symbols ───────────────────────────────────────────────────────────
@@ -85,10 +101,9 @@ class CodeHandler(BaseHandler):
             if deps:
                 lines.append("")
                 lines.append("### Imported workspace files")
-                dep_idxs = await asyncio.gather(*[
-                    loop_gs.run_in_executor(None, extract_symbols, dep)
-                    for dep in deps[:10]
-                ])
+                dep_idxs = await asyncio.gather(
+                    *[loop_gs.run_in_executor(None, extract_symbols, dep) for dep in deps[:10]]
+                )
                 for dep, dep_idx in zip(deps[:10], dep_idxs):
                     if not dep_idx.is_empty():
                         try:
@@ -110,11 +125,11 @@ class CodeHandler(BaseHandler):
     async def get_dep_graph(
         self,
         path: str,
-        show_dependents:  bool = True,
-        show_transitive:  bool = False,
-        show_external:    bool = True,
-        detect_cycles:    bool = False,
-        max_depth:        int  = 3,
+        show_dependents: bool = True,
+        show_transitive: bool = False,
+        show_external: bool = True,
+        detect_cycles: bool = False,
+        max_depth: int = 3,
     ) -> str:
         target = self.ctx._resolve_path(path)
         if not target.exists():
@@ -123,7 +138,9 @@ class CodeHandler(BaseHandler):
         graph = get_dependency_graph(self.ctx.workspace)
 
         if target.is_dir():
-            files = sorted(f for f in target.iterdir() if f.is_file() and f.suffix in self._SOURCE_EXTS)
+            files = sorted(
+                f for f in target.iterdir() if f.is_file() and f.suffix in self._SOURCE_EXTS
+            )
             if not files:
                 return f"No source files found in {target}"
         else:
@@ -163,7 +180,9 @@ class CodeHandler(BaseHandler):
                         lines.append(f"  {dr}")
                 else:
                     loop_dg = asyncio.get_event_loop()
-                    await loop_dg.run_in_executor(None, lambda: graph.build_workspace(max_files=500))
+                    await loop_dg.run_in_executor(
+                        None, lambda: graph.build_workspace(max_files=500)
+                    )
                     deps_on_me = graph.dependents(fpath)
                     if deps_on_me:
                         lines.append(f"\n### Imported by ({len(deps_on_me)})")
@@ -237,7 +256,11 @@ class CodeHandler(BaseHandler):
             all_issues.sort(key=lambda i: (_sev_order.get(i.severity, 9), i.file, i.line))
             summary = f"{len(all_issues)} issue(s) across {', '.join(results)} — "
             summary += ", ".join(f"{t}: {len(v)}" for t, v in results.items() if v)
-            return summary + "\n\n" + format_issues(all_issues, self.ctx.workspace, max_issues=max_issues)
+            return (
+                summary
+                + "\n\n"
+                + format_issues(all_issues, self.ctx.workspace, max_issues=max_issues)
+            )
 
         loop = asyncio.get_event_loop()
         try:

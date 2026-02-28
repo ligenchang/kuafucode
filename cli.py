@@ -40,6 +40,7 @@ app.add_typer(config_app, name="config")
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _get_workspace(workspace_arg: Optional[str]) -> Path:
     ws = Path(workspace_arg) if workspace_arg else Path.cwd()
     if not ws.exists():
@@ -72,17 +73,23 @@ def _setup(workspace: Path) -> tuple[Config, SessionStore]:
 # nvagent (default — launches chat)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w", help="Project directory")] = None,
+    workspace: Annotated[
+        Optional[str], typer.Option("--workspace", "-w", help="Project directory")
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume", "-r", help="Resume last session")] = False,
     version: Annotated[bool, typer.Option("--version", "-v", help="Show version")] = False,
-    model: Annotated[Optional[str], typer.Option("--model", "-m", help="Override default model")] = None,
+    model: Annotated[
+        Optional[str], typer.Option("--model", "-m", help="Override default model")
+    ] = None,
 ):
     """⬛ nvagent — NVIDIA NIM powered terminal coding agent."""
     if version:
         from nvagent import __version__
+
         typer.echo(f"nvagent {__version__}")
         raise typer.Exit()
 
@@ -95,16 +102,42 @@ def main(
 # nvagent chat
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.command()
 def chat(
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w", help="Project directory")] = None,
+    workspace: Annotated[
+        Optional[str], typer.Option("--workspace", "-w", help="Project directory")
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume", "-r", help="Resume last session")] = False,
     new: Annotated[bool, typer.Option("--new", "-n", help="Force new session")] = False,
-    no_confirm: Annotated[bool, typer.Option("--no-confirm", help="Skip diff confirmation prompts")] = False,
-    model: Annotated[Optional[str], typer.Option("--model", "-m", help="Override default model")] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Simulate — show what the agent would do without modifying any files")] = False,
-    plan_preview: Annotated[bool, typer.Option("--plan-preview", "-p", help="Pause after plan is ready and ask for approval before executing")] = False,
-    approve_writes: Annotated[bool, typer.Option("--approve-writes", "-a", help="Ask for confirmation on every file write (shows full diff)")] = False,
+    no_confirm: Annotated[
+        bool, typer.Option("--no-confirm", help="Skip diff confirmation prompts")
+    ] = False,
+    model: Annotated[
+        Optional[str], typer.Option("--model", "-m", help="Override default model")
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run", help="Simulate — show what the agent would do without modifying any files"
+        ),
+    ] = False,
+    plan_preview: Annotated[
+        bool,
+        typer.Option(
+            "--plan-preview",
+            "-p",
+            help="Pause after plan is ready and ask for approval before executing",
+        ),
+    ] = False,
+    approve_writes: Annotated[
+        bool,
+        typer.Option(
+            "--approve-writes",
+            "-a",
+            help="Ask for confirmation on every file write (shows full diff)",
+        ),
+    ] = False,
 ):
     """Launch the interactive TUI."""
     _launch_chat(
@@ -145,7 +178,9 @@ def _launch_chat(
         session = session_store.get_last_session(str(ws))
         if session:
             n = sum(1 for m in session.messages if m["role"] == "user")
-            typer.echo(f"  ↩  Resuming session #{session.id}  ·  {n} exchange{'s' if n != 1 else ''}  ·  {session.updated_at[:16]}")
+            typer.echo(
+                f"  ↩  Resuming session #{session.id}  ·  {n} exchange{'s' if n != 1 else ''}  ·  {session.updated_at[:16]}"
+            )
 
     if session is None:
         session = session_store.create_session(str(ws))
@@ -153,6 +188,7 @@ def _launch_chat(
 
     # Launch TUI
     from nvagent.tui.app import launch_tui
+
     launch_tui(
         workspace=ws,
         config=config,
@@ -166,10 +202,13 @@ def _launch_chat(
 # nvagent run
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.command()
 def run(
     task: Annotated[str, typer.Argument(help="Task to perform")],
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w", help="Project directory")] = None,
+    workspace: Annotated[
+        Optional[str], typer.Option("--workspace", "-w", help="Project directory")
+    ] = None,
     model: Annotated[Optional[str], typer.Option("--model", "-m", help="Override model")] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q", help="Only show final output")] = False,
 ):
@@ -223,16 +262,18 @@ def run(
 
             elif event.type == "safety_violation":
                 d = event.data if isinstance(event.data, dict) else {}
-                kind  = d.get("kind", "?")
-                msg   = d.get("message", str(event.data))
+                kind = d.get("kind", "?")
+                msg = d.get("message", str(event.data))
                 fatal = d.get("fatal", False)
-                icon  = "✗" if fatal else "⚠"
+                icon = "✗" if fatal else "⚠"
                 print(f"\n{icon} Safety [{kind}]: {msg}", flush=True)
 
             elif event.type == "done":
                 data = event.data
                 if not quiet:
-                    print(f"\n\n✓ Done ({data.get('turns', 0)} turns, ~{data.get('tokens_used', 0):,} tokens)")
+                    print(
+                        f"\n\n✓ Done ({data.get('turns', 0)} turns, ~{data.get('tokens_used', 0):,} tokens)"
+                    )
 
         if quiet and response_parts:
             print("".join(response_parts))
@@ -243,6 +284,7 @@ def run(
 # ─────────────────────────────────────────────────────────────────────────────
 # nvagent config
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @config_app.command("show")
 def config_show(
@@ -334,6 +376,7 @@ def config_init(
 # nvagent sessions
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @app.command()
 def sessions(
     workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
@@ -355,13 +398,16 @@ def sessions(
     for s in sessions_list:
         msg_count = len(s.messages)
         summary = s.summary[:40] if s.summary else "(no summary)"
-        typer.echo(f"  {s.id:<6} {s.created_at[:16]:<20} {s.updated_at[:16]:<20} {msg_count:<10} {summary}")
+        typer.echo(
+            f"  {s.id:<6} {s.created_at[:16]:<20} {s.updated_at[:16]:<20} {msg_count:<10} {summary}"
+        )
     typer.echo("")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # nvagent models
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @app.command()
 def models(
@@ -373,6 +419,7 @@ def models(
 
     async def _list():
         from nvagent.core.client import NIMClient
+
         client = NIMClient(config)
         typer.echo("\n⬛ Available NVIDIA NIM models:\n")
         models_list = await client.get_models()

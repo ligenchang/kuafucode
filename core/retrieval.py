@@ -34,7 +34,6 @@ from typing import Optional
 from nvagent.core.index import get_workspace_index
 from nvagent.core.symbols import _iter_workspace_files
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Tokeniser
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,7 +77,7 @@ def _path_tokens(path: Path, workspace: Path) -> list[str]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _BM25_K1 = 1.5
-_BM25_B  = 0.75
+_BM25_B = 0.75
 
 
 class _BM25Scorer:
@@ -88,10 +87,10 @@ class _BM25Scorer:
     """
 
     def __init__(self) -> None:
-        self._docs:   list[list[str]] = []         # doc_id → token list
-        self._df:     dict[str, int]  = {}         # term → document frequency
-        self._avg_dl: float           = 1.0
-        self._built:  bool            = False
+        self._docs: list[list[str]] = []  # doc_id → token list
+        self._df: dict[str, int] = {}  # term → document frequency
+        self._avg_dl: float = 1.0
+        self._built: bool = False
 
     def add_document(self, tokens: list[str]) -> int:
         """Add a document (list of tokens). Returns doc_id."""
@@ -113,19 +112,19 @@ class _BM25Scorer:
         """Return BM25 score for a query against a document."""
         if not self._built or doc_id >= len(self._docs):
             return 0.0
-        doc    = self._docs[doc_id]
-        dl     = len(doc)
-        n      = len(self._docs)
-        score  = 0.0
+        doc = self._docs[doc_id]
+        dl = len(doc)
+        n = len(self._docs)
+        score = 0.0
         tf_map: dict[str, int] = {}
         for t in doc:
             tf_map[t] = tf_map.get(t, 0) + 1
 
         for term in set(query_tokens):
-            df  = self._df.get(term, 0)
+            df = self._df.get(term, 0)
             if df == 0:
                 continue
-            tf  = tf_map.get(term, 0)
+            tf = tf_map.get(term, 0)
             idf = math.log((n - df + 0.5) / (df + 0.5) + 1)
             tf_norm = (tf * (_BM25_K1 + 1)) / (
                 tf + _BM25_K1 * (1 - _BM25_B + _BM25_B * dl / self._avg_dl)
@@ -142,10 +141,7 @@ class _BM25Scorer:
         """
         if not self._built:
             return []
-        scored = (
-            (doc_id, self.score(query_tokens, doc_id))
-            for doc_id in range(len(self._docs))
-        )
+        scored = ((doc_id, self.score(query_tokens, doc_id)) for doc_id in range(len(self._docs)))
         top = heapq.nlargest(k, scored, key=lambda x: x[1])
         return [(did, s) for did, s in top if s > 0]
 
@@ -154,16 +150,17 @@ class _BM25Scorer:
 # ScoredFile  (result type)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ScoredFile:
-    path:  Path
+    path: Path
     score: float
-    reason: str = ""   # human-readable explanation of why it was retrieved
+    reason: str = ""  # human-readable explanation of why it was retrieved
 
     def render(self, workspace: Optional[Path] = None) -> str:
         try:
             ws_r = workspace.resolve() if workspace else None
-            rel  = self.path.relative_to(ws_r) if ws_r else self.path
+            rel = self.path.relative_to(ws_r) if ws_r else self.path
         except ValueError:
             rel = self.path
         reason_str = f"  # {self.reason}" if self.reason else ""
@@ -176,10 +173,10 @@ class ScoredFile:
 
 # Field weights: how much each document field contributes to the token bag
 _FIELD_WEIGHTS = {
-    "path":    4,   # filename/directory names are very informative
-    "symbols": 3,   # function/class names
-    "imports": 2,   # what it imports (relates via dependency)
-    "content": 1,   # raw content snippets
+    "path": 4,  # filename/directory names are very informative
+    "symbols": 3,  # function/class names
+    "imports": 2,  # what it imports (relates via dependency)
+    "content": 1,  # raw content snippets
 }
 
 
@@ -191,13 +188,13 @@ class RetrievalIndex:
     """
 
     def __init__(self, workspace: Path) -> None:
-        self.workspace  = workspace.resolve()
-        self._paths:    list[Path]    = []       # doc_id → Path
-        self._bm25:     _BM25Scorer   = _BM25Scorer()
-        self._path_idx: dict[str, int] = {}      # abs_str → doc_id
-        self._lock      = threading.Lock()
-        self._built     = False
-        self._dirty     = False
+        self.workspace = workspace.resolve()
+        self._paths: list[Path] = []  # doc_id → Path
+        self._bm25: _BM25Scorer = _BM25Scorer()
+        self._path_idx: dict[str, int] = {}  # abs_str → doc_id
+        self._lock = threading.Lock()
+        self._built = False
+        self._dirty = False
 
     def build(self, max_files: int = 2000) -> int:
         """
@@ -225,8 +222,8 @@ class RetrievalIndex:
         with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as ex:
             token_results = list(ex.map(_tokens_safe, all_files))
 
-        bm25     = _BM25Scorer()
-        paths:   list[Path]    = []
+        bm25 = _BM25Scorer()
+        paths: list[Path] = []
         path_idx: dict[str, int] = {}
 
         for fpath, tokens in token_results:
@@ -239,10 +236,10 @@ class RetrievalIndex:
         bm25.build()
 
         with self._lock:
-            self._paths   = paths
-            self._bm25    = bm25
+            self._paths = paths
+            self._bm25 = bm25
             self._path_idx = path_idx
-            self._built   = True
+            self._built = True
 
         return len(paths)
 
@@ -311,7 +308,7 @@ class RetrievalIndex:
 
         with self._lock:
             for p in paths:
-                key    = str(p.resolve())
+                key = str(p.resolve())
                 doc_id = self._path_idx.get(key)
                 if doc_id is None:
                     # File not indexed yet — give it a path-only score
@@ -366,8 +363,8 @@ class RetrievalIndex:
 # Module-level singleton
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RETRIEVAL_INDICES:      dict[str, RetrievalIndex] = {}
-_RETRIEVAL_INDICES_LOCK  = threading.Lock()
+_RETRIEVAL_INDICES: dict[str, RetrievalIndex] = {}
+_RETRIEVAL_INDICES_LOCK = threading.Lock()
 
 
 def get_retrieval_index(workspace: Path) -> RetrievalIndex:
@@ -382,6 +379,7 @@ def get_retrieval_index(workspace: Path) -> RetrievalIndex:
 # ─────────────────────────────────────────────────────────────────────────────
 # Convenience functions
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def retrieve_files(
     query: str,

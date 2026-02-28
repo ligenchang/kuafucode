@@ -54,7 +54,7 @@ CREATE INDEX IF NOT EXISTS idx_accessed ON read_cache(accessed);
 
 # Prune when table grows past _MAX_ENTRIES; keep the _PRUNE_TO most-recently-used.
 _MAX_ENTRIES = 2_000
-_PRUNE_TO    = 1_500
+_PRUNE_TO = 1_500
 
 # Only cache results up to this many chars  (~300 KB) to avoid a giant DB.
 _MAX_RESULT_CHARS = 300_000
@@ -144,9 +144,7 @@ class ToolCache:
                     (path, mtime_ns, result),
                 )
                 # LRU prune
-                count = self._conn.execute(
-                    "SELECT COUNT(*) FROM read_cache"
-                ).fetchone()[0]
+                count = self._conn.execute("SELECT COUNT(*) FROM read_cache").fetchone()[0]
                 if count > _MAX_ENTRIES:
                     self._conn.execute(
                         "DELETE FROM read_cache WHERE (path_key, mtime_ns) IN ("
@@ -192,9 +190,7 @@ class ToolCache:
                     db_rows,
                 )
                 # Single prune check for the whole batch
-                count = self._conn.execute(
-                    "SELECT COUNT(*) FROM read_cache"
-                ).fetchone()[0]
+                count = self._conn.execute("SELECT COUNT(*) FROM read_cache").fetchone()[0]
                 if count > _MAX_ENTRIES:
                     self._conn.execute(
                         "DELETE FROM read_cache WHERE (path_key, mtime_ns) IN ("

@@ -8,16 +8,15 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Curated roster of supported models (used for the /model menu in the TUI).
 # Each entry is a full NIM model ID.  The first entry is the default.
 # ─────────────────────────────────────────────────────────────────────────────
 SUPPORTED_MODELS: list[str] = [
-    "qwen/qwen3.5-397b-a17b",    # Qwen 3.5 397B MoE — strong reasoning + tools
-    "minimaxai/minimax-m2.1",    # MiniMax M2.1 — long-context, reasoning
-    "moonshotai/kimi-k2.5",      # Kimi K2.5 — fast MoE, tool-calling
-    "z-ai/glm4.7",               # GLM-4.7 — fast thinking + tool-calling
+    "qwen/qwen3.5-397b-a17b",  # Qwen 3.5 397B MoE — strong reasoning + tools
+    "minimaxai/minimax-m2.1",  # MiniMax M2.1 — long-context, reasoning
+    "moonshotai/kimi-k2.5",  # Kimi K2.5 — fast MoE, tool-calling
+    "z-ai/glm4.7",  # GLM-4.7 — fast thinking + tool-calling
     "nvidia/nemotron-3-nano-30b-a3b",  # Nemotron-3-Nano 30B — efficient on-device
 ]
 
@@ -129,8 +128,8 @@ class ApiConfig:
 @dataclass
 class ModelsConfig:
     default: str = "nvidia/nemotron-3-nano-30b-a3b"
-    fast: str    = "nvidia/nemotron-3-nano-30b-a3b"
-    code: str    = "nvidia/nemotron-3-nano-30b-a3b"
+    fast: str = "nvidia/nemotron-3-nano-30b-a3b"
+    code: str = "nvidia/nemotron-3-nano-30b-a3b"
 
 
 @dataclass
@@ -138,10 +137,10 @@ class AgentConfig:
     max_tokens: int = 16384
     temperature: float = 0.2
     safe_mode: bool = False
-    dry_run: bool = False          # show what would happen — never write or execute
-    plan_preview: bool = False     # pause after plan is ready, ask user to confirm
-    approve_writes: bool = False   # ask for confirmation on every file write
-    max_file_bytes: int = 512000   # 500KB
+    dry_run: bool = False  # show what would happen — never write or execute
+    plan_preview: bool = False  # pause after plan is ready, ask user to confirm
+    approve_writes: bool = False  # ask for confirmation on every file write
+    max_file_bytes: int = 512000  # 500KB
     max_context_files: int = 50
     # Reasoning/think-token budget in *tokens* (≈ chars / 4).
     # If the model generates more think tokens than this before emitting any
@@ -153,6 +152,7 @@ class AgentConfig:
 @dataclass
 class SafetyConfig:
     """All tunable safety / guardrail parameters."""
+
     # Git checkpointing
     git_checkpoint: bool = True
     git_checkpoint_push: bool = False
@@ -168,7 +168,7 @@ class SafetyConfig:
     max_wall_seconds: float = 900.0
     max_files_per_task: int = 60
     max_tool_calls: int = 150
-    max_tool_calls_per_turn: int = 30   # hard cap per single LLM response batch
+    max_tool_calls_per_turn: int = 30  # hard cap per single LLM response batch
     max_output_bytes: int = 2_097_152
     # Test enforcement
     require_tests_pass: bool = False
@@ -179,6 +179,7 @@ class SafetyConfig:
 @dataclass
 class McpServerConfig:
     """Configuration for a single stdio-based MCP server."""
+
     name: str
     command: str
     args: list[str] = field(default_factory=list)
@@ -189,17 +190,34 @@ class McpServerConfig:
 @dataclass
 class McpConfig:
     """Configuration for MCP (Model Context Protocol) server integration."""
+
     servers: list[McpServerConfig] = field(default_factory=list)
 
 
 @dataclass
 class ContextConfig:
-    ignore_patterns: list[str] = field(default_factory=lambda: [
-        ".git", "__pycache__", "node_modules", ".venv", "venv",
-        "*.pyc", "*.pyo", "*.egg-info", "dist", "build",
-        ".DS_Store", "*.min.js", "*.min.css", "package-lock.json",
-        "yarn.lock", "*.lock", ".env", ".env.*"
-    ])
+    ignore_patterns: list[str] = field(
+        default_factory=lambda: [
+            ".git",
+            "__pycache__",
+            "node_modules",
+            ".venv",
+            "venv",
+            "*.pyc",
+            "*.pyo",
+            "*.egg-info",
+            "dist",
+            "build",
+            ".DS_Store",
+            "*.min.js",
+            "*.min.css",
+            "package-lock.json",
+            "yarn.lock",
+            "*.lock",
+            ".env",
+            ".env.*",
+        ]
+    )
 
 
 @dataclass

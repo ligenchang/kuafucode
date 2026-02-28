@@ -46,6 +46,7 @@ RETRY_HINTS: dict[str, str] = {
 # Error classifier
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def classify_tool_error(name: str, result: str) -> Optional[str]:
     """Return an error-category key for a failed tool result, or None.
 
@@ -60,9 +61,18 @@ def classify_tool_error(name: str, result: str) -> Optional[str]:
             return "ambiguous_edit"
         if "not found" in r_lower or "no match" in r_lower or "could not find" in r_lower:
             return "edit_not_found"
-    if name in ("read_file", "write_file", "edit_file", "str_replace_editor", "find_files", "delete_file"):
-        if "no such file" in r_lower or "does not exist" in r_lower or (
-            "not found" in r_lower and name != "edit_file"
+    if name in (
+        "read_file",
+        "write_file",
+        "edit_file",
+        "str_replace_editor",
+        "find_files",
+        "delete_file",
+    ):
+        if (
+            "no such file" in r_lower
+            or "does not exist" in r_lower
+            or ("not found" in r_lower and name != "edit_file")
         ):
             return "file_not_found"
     if name == "run_command":

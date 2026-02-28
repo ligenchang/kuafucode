@@ -5,6 +5,7 @@ call, applies budget/truncation logic, and exposes processed
 :class:`~nvagent.core.events.AgentEvent` objects to the caller while
 accumulating its own :attr:`LLMStream.result` for the post-stream handler.
 """
+
 from __future__ import annotations
 
 import time
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
 # ──────────────────────────────────────────────────────────────────────────────
 # Result container
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class StreamResult:
@@ -52,6 +54,7 @@ class StreamResult:
 # ──────────────────────────────────────────────────────────────────────────────
 # Async iterator
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class LLMStream:
     """Async-iterable processor for a single LLM chat turn.
@@ -118,9 +121,7 @@ class LLMStream:
             if event.type == "token":
                 if not _first_token_logged:
                     _first_token_logged = True
-                    perf[f"llm_first_token_turn{self._turn}"] = (
-                        time.monotonic() - _t_llm_call
-                    )
+                    perf[f"llm_first_token_turn{self._turn}"] = time.monotonic() - _t_llm_call
                 if _t_think_start is not None and not _think_phase_done:
                     _think_phase_done = True
                     _think_dur = time.monotonic() - _t_think_start
@@ -144,9 +145,7 @@ class LLMStream:
             elif event.type == "think_token":
                 if not _first_token_logged:
                     _first_token_logged = True
-                    perf[f"llm_first_token_turn{self._turn}"] = (
-                        time.monotonic() - _t_llm_call
-                    )
+                    perf[f"llm_first_token_turn{self._turn}"] = time.monotonic() - _t_llm_call
                 if _t_think_start is None:
                     _t_think_start = time.monotonic()
                 _think_char_count += len(event.data)
@@ -201,9 +200,7 @@ class LLMStream:
                 _smsg = str(event.data)
                 if _smsg.startswith("⏱ api-connect "):
                     try:
-                        perf[f"api_connect_turn{self._turn}"] = float(
-                            _smsg.split()[2].rstrip("s")
-                        )
+                        perf[f"api_connect_turn{self._turn}"] = float(_smsg.split()[2].rstrip("s"))
                     except Exception:
                         pass
                 elif _smsg.startswith("⏱ api-first-chunk "):

@@ -8,10 +8,10 @@ import os
 import signal
 import sys
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Subprocess helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _kill_proc_group(proc: "asyncio.subprocess.Process") -> None:  # type: ignore[name-defined]
     """Kill the process and its entire process group on Unix (SIGKILL).
@@ -60,13 +60,22 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "Path to the file (relative to workspace or absolute)"},
-                    "start_line": {"type": "integer", "description": "First line to read (1-indexed, inclusive). Use with end_line to read a targeted section."},
-                    "end_line": {"type": "integer", "description": "Last line to read (1-indexed, inclusive). Use with start_line to read a targeted section."},
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file (relative to workspace or absolute)",
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "First line to read (1-indexed, inclusive). Use with end_line to read a targeted section.",
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Last line to read (1-indexed, inclusive). Use with start_line to read a targeted section.",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -79,9 +88,9 @@ TOOL_SCHEMAS = [
                     "path": {"type": "string", "description": "Path to the file"},
                     "content": {"type": "string", "description": "Complete file content to write"},
                 },
-                "required": ["path", "content"]
-            }
-        }
+                "required": ["path", "content"],
+            },
+        },
     },
     {
         "type": "function",
@@ -102,16 +111,22 @@ TOOL_SCHEMAS = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "path":    {"type": "string", "description": "File path (relative to workspace or absolute)"},
-                                "content": {"type": "string", "description": "Complete file content to write"},
+                                "path": {
+                                    "type": "string",
+                                    "description": "File path (relative to workspace or absolute)",
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "description": "Complete file content to write",
+                                },
                             },
-                            "required": ["path", "content"]
-                        }
+                            "required": ["path", "content"],
+                        },
                     }
                 },
-                "required": ["files"]
-            }
-        }
+                "required": ["files"],
+            },
+        },
     },
     {
         "type": "function",
@@ -122,11 +137,14 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Directory path to list"},
-                    "recursive": {"type": "boolean", "description": "List recursively (default: false)"},
+                    "recursive": {
+                        "type": "boolean",
+                        "description": "List recursively (default: false)",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -142,8 +160,14 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command to execute"},
-                    "cwd": {"type": "string", "description": "Working directory (optional, defaults to workspace)"},
-                    "timeout": {"type": "integer", "description": "Timeout in seconds (default: 60)"},
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory (optional, defaults to workspace)",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default: 60)",
+                    },
                     "max_output_chars": {
                         "type": "integer",
                         "description": (
@@ -153,9 +177,9 @@ TOOL_SCHEMAS = [
                         ),
                     },
                 },
-                "required": ["command"]
-            }
-        }
+                "required": ["command"],
+            },
+        },
     },
     {
         "type": "function",
@@ -165,27 +189,38 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Text or regex pattern to search for"},
-                    "path": {"type": "string", "description": "Directory to search in (optional, defaults to workspace)"},
-                    "file_pattern": {"type": "string", "description": "File pattern to filter, e.g. '*.py' (optional)"},
-                    "regex": {"type": "boolean", "description": "Treat query as regex (default: false)"},
-                    "case_sensitive": {"type": "boolean", "description": "Case sensitive search (default: false)"},
+                    "query": {
+                        "type": "string",
+                        "description": "Text or regex pattern to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (optional, defaults to workspace)",
+                    },
+                    "file_pattern": {
+                        "type": "string",
+                        "description": "File pattern to filter, e.g. '*.py' (optional)",
+                    },
+                    "regex": {
+                        "type": "boolean",
+                        "description": "Treat query as regex (default: false)",
+                    },
+                    "case_sensitive": {
+                        "type": "boolean",
+                        "description": "Case sensitive search (default: false)",
+                    },
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "git_status",
             "description": "Get git repository status — modified files, staged changes, branch info.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -195,13 +230,19 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "staged": {"type": "boolean", "description": "Show staged changes (default: false = unstaged)"},
+                    "staged": {
+                        "type": "boolean",
+                        "description": "Show staged changes (default: false = unstaged)",
+                    },
                     "file": {"type": "string", "description": "Specific file to diff (optional)"},
-                    "commit": {"type": "string", "description": "Compare with a specific commit hash (optional)"},
+                    "commit": {
+                        "type": "string",
+                        "description": "Compare with a specific commit hash (optional)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -212,11 +253,14 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "url": {"type": "string", "description": "URL to fetch"},
-                    "max_chars": {"type": "integer", "description": "Max characters to return (default: 8000)"},
+                    "max_chars": {
+                        "type": "integer",
+                        "description": "Max characters to return (default: 8000)",
+                    },
                 },
-                "required": ["url"]
-            }
-        }
+                "required": ["url"],
+            },
+        },
     },
     {
         "type": "function",
@@ -226,12 +270,19 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "Content to append or the full new memory content"},
-                    "mode": {"type": "string", "enum": ["append", "replace"], "description": "append (default) or replace"},
+                    "content": {
+                        "type": "string",
+                        "description": "Content to append or the full new memory content",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["append", "replace"],
+                        "description": "append (default) or replace",
+                    },
                 },
-                "required": ["content"]
-            }
-        }
+                "required": ["content"],
+            },
+        },
     },
     {
         "type": "function",
@@ -243,9 +294,9 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "path": {"type": "string", "description": "Path to delete"},
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -261,12 +312,18 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "File or directory to analyse"},
-                    "include_imports": {"type": "boolean", "description": "Also show import statements (default: false)"},
-                    "follow_imports": {"type": "boolean", "description": "Also show signatures of locally-imported files (default: false)"},
+                    "include_imports": {
+                        "type": "boolean",
+                        "description": "Also show import statements (default: false)",
+                    },
+                    "follow_imports": {
+                        "type": "boolean",
+                        "description": "Also show signatures of locally-imported files (default: false)",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -281,16 +338,31 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":               {"type": "string",  "description": "File or directory to analyse"},
-                    "show_dependents":    {"type": "boolean", "description": "Show which files import this file (default: true)"},
-                    "show_transitive":    {"type": "boolean", "description": "Show full transitive dependency tree (default: false)"},
-                    "show_external":      {"type": "boolean", "description": "List external (third-party) packages used (default: true)"},
-                    "detect_cycles":      {"type": "boolean", "description": "Check for circular import cycles (default: false)"},
-                    "max_depth":          {"type": "integer", "description": "Maximum traversal depth for transitive analysis (default: 3)"},
+                    "path": {"type": "string", "description": "File or directory to analyse"},
+                    "show_dependents": {
+                        "type": "boolean",
+                        "description": "Show which files import this file (default: true)",
+                    },
+                    "show_transitive": {
+                        "type": "boolean",
+                        "description": "Show full transitive dependency tree (default: false)",
+                    },
+                    "show_external": {
+                        "type": "boolean",
+                        "description": "List external (third-party) packages used (default: true)",
+                    },
+                    "detect_cycles": {
+                        "type": "boolean",
+                        "description": "Check for circular import cycles (default: false)",
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Maximum traversal depth for transitive analysis (default: 3)",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -305,12 +377,18 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "The exact symbol name to find (e.g. 'Agent', 'build_context', 'MAX_RETRIES')"},
-                    "hint_file": {"type": "string", "description": "Optional file path to search first (speeds things up when you know the likely file)"},
+                    "name": {
+                        "type": "string",
+                        "description": "The exact symbol name to find (e.g. 'Agent', 'build_context', 'MAX_RETRIES')",
+                    },
+                    "hint_file": {
+                        "type": "string",
+                        "description": "Optional file path to search first (speeds things up when you know the likely file)",
+                    },
                 },
-                "required": ["name"]
-            }
-        }
+                "required": ["name"],
+            },
+        },
     },
     {
         "type": "function",
@@ -325,13 +403,19 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "The exact symbol name to find usages of"},
+                    "name": {
+                        "type": "string",
+                        "description": "The exact symbol name to find usages of",
+                    },
                     "hint_file": {"type": "string", "description": "Optional file to search first"},
-                    "include_definitions": {"type": "boolean", "description": "Also include definition sites (default: false)"},
+                    "include_definitions": {
+                        "type": "boolean",
+                        "description": "Also include definition sites (default: false)",
+                    },
                 },
-                "required": ["name"]
-            }
-        }
+                "required": ["name"],
+            },
+        },
     },
     {
         "type": "function",
@@ -353,17 +437,26 @@ TOOL_SCHEMAS = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "search":  {"type": "string", "description": "Exact text to find (must be unique enough to locate the right spot)"},
-                                "replace": {"type": "string", "description": "Text to substitute in place of 'search'"},
+                                "search": {
+                                    "type": "string",
+                                    "description": "Exact text to find (must be unique enough to locate the right spot)",
+                                },
+                                "replace": {
+                                    "type": "string",
+                                    "description": "Text to substitute in place of 'search'",
+                                },
                             },
-                            "required": ["search", "replace"]
-                        }
+                            "required": ["search", "replace"],
+                        },
                     },
-                    "create_if_missing": {"type": "boolean", "description": "Create the file with 'replace' content if it doesn't exist (default: false)"},
+                    "create_if_missing": {
+                        "type": "boolean",
+                        "description": "Create the file with 'replace' content if it doesn't exist (default: false)",
+                    },
                 },
-                "required": ["path", "edits"]
-            }
-        }
+                "required": ["path", "edits"],
+            },
+        },
     },
     {
         "type": "function",
@@ -381,16 +474,32 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command":     {"type": "string",  "description": "Action: str_replace | create | write | view | insert | undo_edit"},
-                    "path":        {"type": "string",  "description": "Path to the file"},
-                    "old_str":     {"type": "string",  "description": "Exact text to find and replace (str_replace command)"},
-                    "new_str":     {"type": "string",  "description": "Replacement text, or full file content for create/write"},
-                    "view_range":  {"type": "array",   "items": {"type": "integer"}, "description": "[start_line, end_line] for view command"},
-                    "insert_line": {"type": "integer", "description": "Line number after which to insert new_str (insert command)"},
+                    "command": {
+                        "type": "string",
+                        "description": "Action: str_replace | create | write | view | insert | undo_edit",
+                    },
+                    "path": {"type": "string", "description": "Path to the file"},
+                    "old_str": {
+                        "type": "string",
+                        "description": "Exact text to find and replace (str_replace command)",
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "Replacement text, or full file content for create/write",
+                    },
+                    "view_range": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "[start_line, end_line] for view command",
+                    },
+                    "insert_line": {
+                        "type": "integer",
+                        "description": "Line number after which to insert new_str (insert command)",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -404,14 +513,27 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query":  {"type": "string",  "description": "Symbol name or substring to search for"},
-                    "exact":  {"type": "boolean", "description": "If true, require exact name match (default false = substring)"},
-                    "kinds":  {"type": "array", "items": {"type": "string"}, "description": "Optional list of kinds to filter: function, class, method, field, const, type, import"},
-                    "max_results": {"type": "integer", "description": "Max results to return (default 30)"},
+                    "query": {
+                        "type": "string",
+                        "description": "Symbol name or substring to search for",
+                    },
+                    "exact": {
+                        "type": "boolean",
+                        "description": "If true, require exact name match (default false = substring)",
+                    },
+                    "kinds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of kinds to filter: function, class, method, field, const, type, import",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max results to return (default 30)",
+                    },
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
@@ -425,14 +547,26 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "tool":  {"type": "string", "description": "Linter to run: ruff | mypy | pyright | tsc | eslint | all | detect"},
-                    "path":  {"type": "string", "description": "Optional: path to a specific file or directory (default: whole workspace)"},
-                    "fix":   {"type": "boolean", "description": "Auto-fix issues where supported (ruff --fix, eslint --fix)"},
-                    "max_issues": {"type": "integer", "description": "Max issues to return (default 50)"},
+                    "tool": {
+                        "type": "string",
+                        "description": "Linter to run: ruff | mypy | pyright | tsc | eslint | all | detect",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional: path to a specific file or directory (default: whole workspace)",
+                    },
+                    "fix": {
+                        "type": "boolean",
+                        "description": "Auto-fix issues where supported (ruff --fix, eslint --fix)",
+                    },
+                    "max_issues": {
+                        "type": "integer",
+                        "description": "Max issues to return (default 50)",
+                    },
                 },
-                "required": ["tool"]
-            }
-        }
+                "required": ["tool"],
+            },
+        },
     },
     {
         "type": "function",
@@ -446,13 +580,23 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "content": {"type": "string", "description": "The fact or insight to remember (be specific and concise)"},
-                    "tags":    {"type": "array",  "items": {"type": "string"}, "description": "Optional classification tags, e.g. ['architecture', 'bug', 'convention']"},
-                    "file":    {"type": "string", "description": "Optional: file path this memory relates to"},
+                    "content": {
+                        "type": "string",
+                        "description": "The fact or insight to remember (be specific and concise)",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional classification tags, e.g. ['architecture', 'bug', 'convention']",
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Optional: file path this memory relates to",
+                    },
                 },
-                "required": ["content"]
-            }
-        }
+                "required": ["content"],
+            },
+        },
     },
     {
         "type": "function",
@@ -466,13 +610,20 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query":       {"type": "string", "description": "Natural-language search query"},
-                    "max_results": {"type": "integer", "description": "Maximum memories to return (default 8)"},
-                    "tags":        {"type": "array", "items": {"type": "string"}, "description": "Optional: filter to memories with these tags"},
+                    "query": {"type": "string", "description": "Natural-language search query"},
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum memories to return (default 8)",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional: filter to memories with these tags",
+                    },
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
@@ -482,11 +633,14 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "key": {"type": "string", "description": "The memory entry key to delete (12-char hex id)"},
+                    "key": {
+                        "type": "string",
+                        "description": "The memory entry key to delete (12-char hex id)",
+                    },
                 },
-                "required": ["key"]
-            }
-        }
+                "required": ["key"],
+            },
+        },
     },
     {
         "type": "function",
@@ -500,13 +654,22 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":    {"type": "string", "description": "Workspace-relative path of the file to annotate"},
-                    "summary": {"type": "string", "description": "One-line summary of what this file does"},
-                    "note":    {"type": "string", "description": "Additional detail, conventions, or known issues for this file"},
+                    "path": {
+                        "type": "string",
+                        "description": "Workspace-relative path of the file to annotate",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "One-line summary of what this file does",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "Additional detail, conventions, or known issues for this file",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -520,14 +683,27 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":       {"type": "string", "description": "Optional: file or directory to limit the test run"},
-                    "framework":  {"type": "string", "description": "Override framework detection: pytest|jest|vitest|cargo|go|unittest"},
-                    "extra_args": {"type": "array",  "items": {"type": "string"}, "description": "Extra args forwarded to the test runner"},
-                    "retry_on_fail": {"type": "boolean", "description": "Re-run on transient failures (default: false)"},
+                    "path": {
+                        "type": "string",
+                        "description": "Optional: file or directory to limit the test run",
+                    },
+                    "framework": {
+                        "type": "string",
+                        "description": "Override framework detection: pytest|jest|vitest|cargo|go|unittest",
+                    },
+                    "extra_args": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Extra args forwarded to the test runner",
+                    },
+                    "retry_on_fail": {
+                        "type": "boolean",
+                        "description": "Re-run on transient failures (default: false)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -540,13 +716,22 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":       {"type": "string",  "description": "File or directory to format (optional, defaults to whole workspace)"},
-                    "formatter":  {"type": "string",  "description": "Override formatter: black|ruff-format|prettier|gofmt|rustfmt"},
-                    "check_only": {"type": "boolean", "description": "Dry-run, show diff without writing (default: false)"},
+                    "path": {
+                        "type": "string",
+                        "description": "File or directory to format (optional, defaults to whole workspace)",
+                    },
+                    "formatter": {
+                        "type": "string",
+                        "description": "Override formatter: black|ruff-format|prettier|gofmt|rustfmt",
+                    },
+                    "check_only": {
+                        "type": "boolean",
+                        "description": "Dry-run, show diff without writing (default: false)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -557,12 +742,8 @@ TOOL_SCHEMAS = [
                 "Restores files to their state before the last batch of tool calls. "
                 "Use when the previous changes were incorrect or need to be retried."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -576,13 +757,22 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Glob pattern to match, e.g. '*.py', 'src/**/*.ts'"},
-                    "path": {"type": "string", "description": "Directory to search in (optional, defaults to workspace)"},
-                    "max_results": {"type": "integer", "description": "Max files to return (default: 100)"},
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern to match, e.g. '*.py', 'src/**/*.ts'",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Directory to search in (optional, defaults to workspace)",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Max files to return (default: 100)",
+                    },
                 },
-                "required": ["pattern"]
-            }
-        }
+                "required": ["pattern"],
+            },
+        },
     },
     {
         "type": "function",
@@ -595,12 +785,12 @@ TOOL_SCHEMAS = [
                     "paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "File paths to stage. Use ['.'] to stage all changes."
+                        "description": "File paths to stage. Use ['.'] to stage all changes.",
                     },
                 },
-                "required": ["paths"]
-            }
-        }
+                "required": ["paths"],
+            },
+        },
     },
     {
         "type": "function",
@@ -611,11 +801,14 @@ TOOL_SCHEMAS = [
                 "type": "object",
                 "properties": {
                     "message": {"type": "string", "description": "Commit message"},
-                    "add_all": {"type": "boolean", "description": "Auto-stage all tracked modified files before committing (git commit -a). Default: false."},
+                    "add_all": {
+                        "type": "boolean",
+                        "description": "Auto-stage all tracked modified files before committing (git commit -a). Default: false.",
+                    },
                 },
-                "required": ["message"]
-            }
-        }
+                "required": ["message"],
+            },
+        },
     },
     {
         "type": "function",
@@ -625,13 +818,22 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "limit": {"type": "integer", "description": "Number of commits to show (default: 10)"},
-                    "file": {"type": "string", "description": "Show only commits affecting this file (optional)"},
-                    "oneline": {"type": "boolean", "description": "Compact one-line format (default: true)"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of commits to show (default: 10)",
+                    },
+                    "file": {
+                        "type": "string",
+                        "description": "Show only commits affecting this file (optional)",
+                    },
+                    "oneline": {
+                        "type": "boolean",
+                        "description": "Compact one-line format (default: true)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -645,12 +847,18 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "patch":   {"type": "string",  "description": "Unified diff patch text (--- a/ ... +++ b/ ... format)"},
-                    "dry_run": {"type": "boolean", "description": "Validate only, do not apply (default: false)"},
+                    "patch": {
+                        "type": "string",
+                        "description": "Unified diff patch text (--- a/ ... +++ b/ ... format)",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Validate only, do not apply (default: false)",
+                    },
                 },
-                "required": ["patch"]
-            }
-        }
+                "required": ["patch"],
+            },
+        },
     },
     {
         "type": "function",
@@ -666,12 +874,15 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":       {"type": "string",  "description": "Path to the .ipynb file"},
-                    "cell_index": {"type": "integer", "description": "0-based cell index to read in full (omit for summary of all cells)"},
+                    "path": {"type": "string", "description": "Path to the .ipynb file"},
+                    "cell_index": {
+                        "type": "integer",
+                        "description": "0-based cell index to read in full (omit for summary of all cells)",
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -689,15 +900,29 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path":       {"type": "string",  "description": "Path to the .ipynb file"},
-                    "operation":  {"type": "string",  "enum": ["update", "insert", "delete"], "description": "Edit operation"},
-                    "cell_index": {"type": "integer", "description": "0-based cell index to update/delete, or insertion point for insert"},
-                    "source":     {"type": "string",  "description": "New cell source (required for update and insert)"},
-                    "cell_type":  {"type": "string",  "enum": ["code", "markdown"], "description": "Cell type for insert (default: code)"},
+                    "path": {"type": "string", "description": "Path to the .ipynb file"},
+                    "operation": {
+                        "type": "string",
+                        "enum": ["update", "insert", "delete"],
+                        "description": "Edit operation",
+                    },
+                    "cell_index": {
+                        "type": "integer",
+                        "description": "0-based cell index to update/delete, or insertion point for insert",
+                    },
+                    "source": {
+                        "type": "string",
+                        "description": "New cell source (required for update and insert)",
+                    },
+                    "cell_type": {
+                        "type": "string",
+                        "enum": ["code", "markdown"],
+                        "description": "Cell type for insert (default: code)",
+                    },
                 },
-                "required": ["path", "operation"]
-            }
-        }
+                "required": ["path", "operation"],
+            },
+        },
     },
     {
         "type": "function",
@@ -710,12 +935,19 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name":          {"type": "string", "description": "Checkpoint name, e.g. 'before-refactor' (auto-assigned if omitted)"},
-                    "include_paths": {"type": "array",  "items": {"type": "string"}, "description": "Additional file paths to include in the snapshot"},
+                    "name": {
+                        "type": "string",
+                        "description": "Checkpoint name, e.g. 'before-refactor' (auto-assigned if omitted)",
+                    },
+                    "include_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Additional file paths to include in the snapshot",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -728,11 +960,14 @@ TOOL_SCHEMAS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Checkpoint to restore (optional, defaults to most recent)"},
+                    "name": {
+                        "type": "string",
+                        "description": "Checkpoint to restore (optional, defaults to most recent)",
+                    },
                 },
-                "required": []
-            }
-        }
+                "required": [],
+            },
+        },
     },
     {
         "type": "function",
@@ -756,18 +991,27 @@ TOOL_SCHEMAS = [
                         "items": {
                             "type": "object",
                             "properties": {
-                                "id":       {"type": "string", "description": "Stable unique ID (e.g. '1', 'setup-db'). Keep the same ID when updating status."},
-                                "content":  {"type": "string", "description": "What needs to be done — concise, action-oriented"},
-                                "status":   {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
+                                "id": {
+                                    "type": "string",
+                                    "description": "Stable unique ID (e.g. '1', 'setup-db'). Keep the same ID when updating status.",
+                                },
+                                "content": {
+                                    "type": "string",
+                                    "description": "What needs to be done — concise, action-oriented",
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed", "cancelled"],
+                                },
                                 "priority": {"type": "string", "enum": ["high", "medium", "low"]},
                             },
-                            "required": ["id", "content", "status", "priority"]
-                        }
+                            "required": ["id", "content", "status", "priority"],
+                        },
                     }
                 },
-                "required": ["todos"]
-            }
-        }
+                "required": ["todos"],
+            },
+        },
     },
     {
         "type": "function",
@@ -778,11 +1022,7 @@ TOOL_SCHEMAS = [
                 "Call at the start of complex work to see outstanding todos, "
                 "and before todo_write to avoid overwriting the existing list."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
 ]

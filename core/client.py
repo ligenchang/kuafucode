@@ -21,6 +21,7 @@ from typing import AsyncIterator, Optional
 
 import httpx
 from openai import AsyncOpenAI
+
 try:
     from openai import (
         RateLimitError as _OAIRateLimit,
@@ -29,13 +30,14 @@ try:
     )
 except ImportError:
     _OAIRateLimit = Exception  # type: ignore
-    _OAIStatus    = Exception  # type: ignore
-    _OAITimeout   = Exception  # type: ignore
+    _OAIStatus = Exception  # type: ignore
+    _OAITimeout = Exception  # type: ignore
 
 # HTTP/2 support via h2 package — enables multiplexing and HPACK header compression.
 # Falls back to HTTP/1.1 if h2 is not installed (pip install h2).
 try:
     import h2  # noqa: F401
+
     _HTTP2_ENABLED = True
 except ImportError:
     _HTTP2_ENABLED = False
@@ -62,38 +64,89 @@ def _get_http_client() -> httpx.AsyncClient:
         )
     return _SHARED_HTTP_CLIENT
 
+
 from nvagent.config import Config
 
 
 class TaskType(Enum):
-    FAST    = "fast"
+    FAST = "fast"
     DEFAULT = "default"
-    CODE    = "code"
+    CODE = "code"
 
 
 FAST_KEYWORDS = {
     # Questions / explanations
-    "explain", "what is", "what does", "what are", "what do",
-    "summarize", "describe", "list", "show me", "tell me",
-    "why is", "why does", "when did", "who is", "where is",
-    "how does", "how do", "how are",
-    "define", "show",
+    "explain",
+    "what is",
+    "what does",
+    "what are",
+    "what do",
+    "summarize",
+    "describe",
+    "list",
+    "show me",
+    "tell me",
+    "why is",
+    "why does",
+    "when did",
+    "who is",
+    "where is",
+    "how does",
+    "how do",
+    "how are",
+    "define",
+    "show",
     # Read-only analysis — no file writes
-    "check", "analyze", "analyse", "review", "find", "search",
-    "look", "inspect", "diagnose", "trace", "investigate",
-    "print", "display", "read", "view",
-    "debug", "profile",
+    "check",
+    "analyze",
+    "analyse",
+    "review",
+    "find",
+    "search",
+    "look",
+    "inspect",
+    "diagnose",
+    "trace",
+    "investigate",
+    "print",
+    "display",
+    "read",
+    "view",
+    "debug",
+    "profile",
 }
 CODE_KEYWORDS = {
     # Explicit code-generation / write intent
-    "implement", "build", "create", "architect", "design",
-    "rewrite", "refactor", "from scratch", "complex",
-    "add feature", "add support", "integrate", "migrate",
-    "write", "generate", "scaffold", "setup", "configure",
+    "implement",
+    "build",
+    "create",
+    "architect",
+    "design",
+    "rewrite",
+    "refactor",
+    "from scratch",
+    "complex",
+    "add feature",
+    "add support",
+    "integrate",
+    "migrate",
+    "write",
+    "generate",
+    "scaffold",
+    "setup",
+    "configure",
     # Fixes that require writing code
-    "fix", "patch", "resolve", "correct",
+    "fix",
+    "patch",
+    "resolve",
+    "correct",
     # Modification intent
-    "update", "modify", "change", "edit", "extend", "improve",
+    "update",
+    "modify",
+    "change",
+    "edit",
+    "extend",
+    "improve",
     "optimize",
 }
 
@@ -111,7 +164,7 @@ _RE_CODE = re.compile(
 
 @dataclass
 class StreamEvent:
-    type: str   # "token" | "tool_calls" | "error" | "done"
+    type: str  # "token" | "tool_calls" | "error" | "done"
     data: object
 
 
@@ -122,9 +175,16 @@ def classify_task(prompt: str) -> TaskType:
         # But FAST wins back for pure read-only analysis that mentions a code word
         # only incidentally (e.g. "check why fix didn't work")
         if _RE_FAST.search(lower) and not any(
-            kw in lower for kw in (
-                "implement", "build", "create", "write", "generate",
-                "refactor", "scaffold", "rewrite",
+            kw in lower
+            for kw in (
+                "implement",
+                "build",
+                "create",
+                "write",
+                "generate",
+                "refactor",
+                "scaffold",
+                "rewrite",
             )
         ):
             return TaskType.FAST
@@ -137,8 +197,8 @@ def classify_task(prompt: str) -> TaskType:
 # Prompt-based tool calling helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-_TOOL_CALL_TAG   = "tool_call"
-_TOOL_CALL_OPEN  = f"<{_TOOL_CALL_TAG}>"
+_TOOL_CALL_TAG = "tool_call"
+_TOOL_CALL_OPEN = f"<{_TOOL_CALL_TAG}>"
 _TOOL_CALL_CLOSE = f"</{_TOOL_CALL_TAG}>"
 
 
@@ -161,7 +221,7 @@ def _build_tool_system_addon(tools: list[dict]) -> str:
         "",
     ]
     for t in tools:
-        fn   = t["function"]
+        fn = t["function"]
         name = fn["name"]
         desc = fn.get("description", "")
         params = fn.get("parameters", {}).get("properties", {})
@@ -169,7 +229,9 @@ def _build_tool_system_addon(tools: list[dict]) -> str:
         param_strs = []
         for p, meta in params.items():
             req = " (required)" if p in required else ""
-            param_strs.append(f"    {p}: {meta.get('type','any')}{req} — {meta.get('description','')}")
+            param_strs.append(
+                f"    {p}: {meta.get('type','any')}{req} — {meta.get('description','')}"
+            )
         lines.append(f"  {name}: {desc}")
         lines.extend(param_strs)
         lines.append("")
@@ -193,9 +255,9 @@ def _normalize_for_text_tools(messages: list[dict]) -> list[dict]:
             # Rebuild as plain-text tool calls
             parts = [m.get("content") or ""]
             for tc in m["tool_calls"]:
-                fn   = tc.get("function", {})
+                fn = tc.get("function", {})
                 name = fn.get("name", "")
-                raw  = fn.get("arguments", "{}")
+                raw = fn.get("arguments", "{}")
                 try:
                     args = json.loads(raw) if raw else {}
                     body = json.dumps({"name": name, "args": args})
@@ -283,15 +345,16 @@ def _is_tool_404(error: Exception) -> bool:
         body = getattr(error, "body", None)
         if isinstance(body, dict):
             detail = str(body.get("detail", ""))
-            title  = str(body.get("title", ""))
+            title = str(body.get("title", ""))
             # Only flip to text fallback for endpoint-level "not supported" messages
             return (
-                "tool" in detail.lower() and "not supported" in detail.lower()
-            ) or (
-                "Function not found" in detail or "function not found" in detail
-            ) or (
-                "Not Found" in title and not _UUID_RE.search(detail)
-                and ("tool" in detail.lower() or "function" in detail.lower())
+                ("tool" in detail.lower() and "not supported" in detail.lower())
+                or ("Function not found" in detail or "function not found" in detail)
+                or (
+                    "Not Found" in title
+                    and not _UUID_RE.search(detail)
+                    and ("tool" in detail.lower() or "function" in detail.lower())
+                )
             )
         # Fall through to string check for plain-text 404 bodies
     # String-based fallback (httpx errors, non-SDK wrappers)
@@ -302,7 +365,7 @@ def _is_tool_404(error: Exception) -> bool:
     )
 
 
-_RETRY_MAX     = 3
+_RETRY_MAX = 3
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -338,6 +401,7 @@ def _is_retryable(exc: Exception) -> tuple[bool, float]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Client
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class NIMClient:
     """Async NVIDIA NIM client with streaming support."""
@@ -391,8 +455,7 @@ class NIMClient:
                 if tools and self._tool_api_supported:
                     try:
                         async for ev in self._stream_native(
-                            messages, tools, model,
-                            force_tool_use=force_tool_use
+                            messages, tools, model, force_tool_use=force_tool_use
                         ):
                             yield ev
                         return
@@ -422,7 +485,7 @@ class NIMClient:
                 if retryable and attempt < _RETRY_MAX:
                     yield StreamEvent(
                         type="status",
-                        data=f"Retrying after error ({attempt}/{_RETRY_MAX - 1}): {exc}"
+                        data=f"Retrying after error ({attempt}/{_RETRY_MAX - 1}): {exc}",
                     )
                     await asyncio.sleep(wait * attempt)  # exponential: 1x, 2x, …
                     continue
@@ -481,7 +544,7 @@ class NIMClient:
         finish_reason: Optional[str] = None
         think_stripper = _ThinkStripper()
         # Accumulate real token usage from the final API chunk
-        _usage_input:  int = 0
+        _usage_input: int = 0
         _usage_output: int = 0
 
         _t_req = time.monotonic()
@@ -506,7 +569,7 @@ class NIMClient:
             # Capture real token counts from the usage chunk (final chunk,
             # choices may be empty but usage is populated).
             if hasattr(chunk, "usage") and chunk.usage is not None:
-                _usage_input  = getattr(chunk.usage, "prompt_tokens", 0) or 0
+                _usage_input = getattr(chunk.usage, "prompt_tokens", 0) or 0
                 _usage_output = getattr(chunk.usage, "completion_tokens", 0) or 0
 
             if delta.content is not None or getattr(delta, "reasoning_content", None) is not None:
@@ -543,22 +606,27 @@ class NIMClient:
                     yield StreamEvent(type="think_token", data=_flush_think)
                 if _flush_visible:
                     yield StreamEvent(type="token", data=_flush_visible)
-                yield StreamEvent(type="done", data={
-                    "finish": "stop",
-                    "input_tokens": _usage_input,
-                    "output_tokens": _usage_output,
-                    "total_tokens": _usage_input + _usage_output,
-                })
+                yield StreamEvent(
+                    type="done",
+                    data={
+                        "finish": "stop",
+                        "input_tokens": _usage_input,
+                        "output_tokens": _usage_output,
+                        "total_tokens": _usage_input + _usage_output,
+                    },
+                )
                 return
             if finish_reason == "length":
                 # Response was truncated — surface as an error so the loop
                 # can inject a recovery hint rather than silently dropping data.
                 yield StreamEvent(
                     type="error",
-                    data={"message": "Response truncated (finish_reason=length). "
-                                     "The output exceeded max_tokens. "
-                                     "Try splitting the task into smaller steps or "
-                                     "reduce the size of individual file writes."},
+                    data={
+                        "message": "Response truncated (finish_reason=length). "
+                        "The output exceeded max_tokens. "
+                        "Try splitting the task into smaller steps or "
+                        "reduce the size of individual file writes."
+                    },
                 )
                 return
             if finish_reason == "tool_calls":
@@ -583,21 +651,26 @@ class NIMClient:
                     args = json.loads(tc["args"]) if tc["args"] else {}
                 except json.JSONDecodeError:
                     args = {"_raw": tc["args"]}
-                calls.append({
-                    "id": tc["id"] or str(uuid.uuid4()),
-                    "name": tc["name"],
-                    "args": args,
-                    "args_raw": tc["args"],
-                })
+                calls.append(
+                    {
+                        "id": tc["id"] or str(uuid.uuid4()),
+                        "name": tc["name"],
+                        "args": args,
+                        "args_raw": tc["args"],
+                    }
+                )
             yield StreamEvent(type="tool_calls", data=calls)
             # Emit a usage event after tool_calls so the agent loop can
             # update its token budget with real numbers.
             if _usage_input or _usage_output:
-                yield StreamEvent(type="usage", data={
-                    "input_tokens": _usage_input,
-                    "output_tokens": _usage_output,
-                    "total_tokens": _usage_input + _usage_output,
-                })
+                yield StreamEvent(
+                    type="usage",
+                    data={
+                        "input_tokens": _usage_input,
+                        "output_tokens": _usage_output,
+                        "total_tokens": _usage_input + _usage_output,
+                    },
+                )
         else:
             # No tool calls and no explicit finish_reason=stop/length — stream
             # ended unexpectedly (empty response or unknown finish_reason).
@@ -609,12 +682,15 @@ class NIMClient:
             else:
                 # Some chunks arrived but the stream terminated without a
                 # recognised finish_reason.  Treat like a normal stop.
-                yield StreamEvent(type="done", data={
-                    "finish": finish_reason or "unknown",
-                    "input_tokens": _usage_input,
-                    "output_tokens": _usage_output,
-                    "total_tokens": _usage_input + _usage_output,
-                })
+                yield StreamEvent(
+                    type="done",
+                    data={
+                        "finish": finish_reason or "unknown",
+                        "input_tokens": _usage_input,
+                        "output_tokens": _usage_output,
+                        "total_tokens": _usage_input + _usage_output,
+                    },
+                )
 
     # ── Prompt-based tool calling (text parsing fallback) ─────────────────────
 
@@ -645,9 +721,9 @@ class NIMClient:
                 }
             }
 
-        full_text      = ""
-        think_stripper  = _ThinkStripper()
-        buffering_call  = False   # True once we see _TOOL_CALL_OPEN
+        full_text = ""
+        think_stripper = _ThinkStripper()
+        buffering_call = False  # True once we see _TOOL_CALL_OPEN
 
         try:
             _t_req = time.monotonic()
@@ -739,6 +815,7 @@ class NIMClient:
 # Text tool-call parser
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class _ThinkStripper:
     """
     Splits a streaming token feed into (visible, think) text.
@@ -752,7 +829,7 @@ class _ThinkStripper:
 
     # Ordered list of (open_tag, close_tag) pairs — first match wins per stream.
     _TAG_PAIRS: list[tuple[str, str]] = [
-        ("<think>",      "</think>"),
+        ("<think>", "</think>"),
         ("<|thinking|>", "<|/thinking|>"),
     ]
     # Combined regex for fast single-chunk complete blocks
@@ -762,11 +839,11 @@ class _ThinkStripper:
     )
 
     def __init__(self) -> None:
-        self._in_think  = False
-        self._held      = ""    # buffered partial-tag content
+        self._in_think = False
+        self._held = ""  # buffered partial-tag content
         # Active tag pair — detected from first open tag seen in the stream.
         # Starts as None; set on first <think> or <|thinking|> occurrence.
-        self._open_tag:  str = "<think>"
+        self._open_tag: str = "<think>"
         self._close_tag: str = "</think>"
         self._tag_detected: bool = False
 
@@ -774,7 +851,7 @@ class _ThinkStripper:
         """Set active tag pair from the first recognised open tag in *text*."""
         for open_t, close_t in self._TAG_PAIRS:
             if open_t in text:
-                self._open_tag  = open_t
+                self._open_tag = open_t
                 self._close_tag = close_t
                 self._tag_detected = True
                 return
@@ -788,12 +865,12 @@ class _ThinkStripper:
         if not self._tag_detected and not self._in_think:
             self._detect_tags(token)
 
-        open_tag  = self._open_tag
+        open_tag = self._open_tag
         close_tag = self._close_tag
 
         # Fast path: complete block arrives in one token (common with minimax/glm)
         if not self._in_think and open_tag in token and close_tag in token:
-            think   = ""  
+            think = ""
             visible = token
             for m in self._RE.finditer(token):
                 # group(1) = <think> content, group(2) = <|thinking|> content
@@ -803,32 +880,32 @@ class _ThinkStripper:
 
         self._held += token
         visible = ""
-        think   = ""
+        think = ""
 
         while True:
             if self._in_think:
                 close = self._held.find(close_tag)
                 if close == -1:
                     # Entirely inside think — emit everything as think content
-                    think     += self._held
+                    think += self._held
                     self._held = ""
                     break
-                think          += self._held[:close]
-                self._held      = self._held[close + len(close_tag):]
-                self._in_think  = False
+                think += self._held[:close]
+                self._held = self._held[close + len(close_tag) :]
+                self._in_think = False
                 continue
             else:
                 open_pos = self._held.find(open_tag)
                 if open_pos == -1:
                     # No tag — hold back enough chars to detect partial opening tag
-                    max_hold   = max(len(open_tag), len(close_tag))
-                    safe       = max(0, len(self._held) - max_hold + 1)
-                    visible   += self._held[:safe]
+                    max_hold = max(len(open_tag), len(close_tag))
+                    safe = max(0, len(self._held) - max_hold + 1)
+                    visible += self._held[:safe]
                     self._held = self._held[safe:]
                     break
-                visible        += self._held[:open_pos]
-                self._held      = self._held[open_pos + len(open_tag):]
-                self._in_think  = True
+                visible += self._held[:open_pos]
+                self._held = self._held[open_pos + len(open_tag) :]
+                self._in_think = True
 
         return visible, think
 
@@ -836,8 +913,8 @@ class _ThinkStripper:
         """Flush any held partial content (call at end of stream)."""
         held, self._held = self._held, ""
         if self._in_think:
-            return "", held   # held content is think text
-        return held, ""       # held content is visible text
+            return "", held  # held content is think text
+        return held, ""  # held content is visible text
 
 
 def _parse_tool_calls(text: str) -> list[dict]:
@@ -848,7 +925,7 @@ def _parse_tool_calls(text: str) -> list[dict]:
     """
     calls: list[dict] = []
     pos = 0
-    open_len  = len(_TOOL_CALL_OPEN)   # len("<tool_call>")
+    open_len = len(_TOOL_CALL_OPEN)  # len("<tool_call>")
     close_len = len(_TOOL_CALL_CLOSE)  # len("</tool_call>")
     while True:
         tag_start = text.find(_TOOL_CALL_OPEN, pos)
@@ -868,13 +945,12 @@ def _parse_tool_calls(text: str) -> list[dict]:
         args = obj.get("args", obj.get("arguments", obj.get("parameters", {})))
         if not name:
             continue
-        calls.append({
-            "id": str(uuid.uuid4()),
-            "name": name,
-            "args": args,
-            "args_raw": json.dumps(args),
-        })
+        calls.append(
+            {
+                "id": str(uuid.uuid4()),
+                "name": name,
+                "args": args,
+                "args_raw": json.dumps(args),
+            }
+        )
     return calls
-
-
-

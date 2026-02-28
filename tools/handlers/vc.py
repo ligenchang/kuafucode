@@ -40,7 +40,10 @@ class VcHandler(BaseHandler):
 
             if dry_run:
                 dry_proc = await asyncio.create_subprocess_exec(
-                    *base_cmd, "--dry-run", "-i", patch_file,
+                    *base_cmd,
+                    "--dry-run",
+                    "-i",
+                    patch_file,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=self.ctx.workspace,
@@ -53,7 +56,9 @@ class VcHandler(BaseHandler):
                 return f"✓ Patch is valid (dry run — not applied):\n{out_text}"
 
             apply_proc = await asyncio.create_subprocess_exec(
-                *base_cmd, "-i", patch_file,
+                *base_cmd,
+                "-i",
+                patch_file,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self.ctx.workspace,
@@ -63,7 +68,7 @@ class VcHandler(BaseHandler):
                 out_text = app_out.decode("utf-8", errors="replace").strip()
                 for line in out_text.splitlines():
                     if line.startswith("patching file "):
-                        touched = line[len("patching file "):].strip()
+                        touched = line[len("patching file ") :].strip()
                         if touched not in self.ctx.changed_files:
                             self.ctx.changed_files.append(touched)
                         abs_p = self.ctx.workspace / touched
@@ -137,7 +142,7 @@ class VcHandler(BaseHandler):
 
             for hunk_start_1based, old_lines, new_lines_hunk in hunks:
                 start = hunk_start_1based - 1 + offset
-                end   = start + len(old_lines)
+                end = start + len(old_lines)
 
                 if old_lines:
                     actual = new_lines[start:end]
@@ -154,10 +159,14 @@ class VcHandler(BaseHandler):
             new_content = "\n".join(new_lines) + ("\n" if new_lines else "")
 
             if dry_run:
-                diff = list(difflib.unified_diff(
-                    lines, new_lines,
-                    fromfile=f"a/{rel_path}", tofile=f"b/{rel_path}",
-                ))
+                diff = list(
+                    difflib.unified_diff(
+                        lines,
+                        new_lines,
+                        fromfile=f"a/{rel_path}",
+                        tofile=f"b/{rel_path}",
+                    )
+                )
                 results.append(f"✓ {rel_path} (dry run): {len(diff)} diff lines")
                 continue
 
@@ -196,17 +205,14 @@ class VcHandler(BaseHandler):
             abs_path = self.ctx.workspace / rel_path
             if abs_path.exists():
                 candidate_paths.append(abs_path)
-        for p in (include_paths or []):
+        for p in include_paths or []:
             fpath = self.ctx._resolve_path(str(p))
             if fpath.exists() and fpath.is_file():
                 ok, _ = self.ctx.sandbox.validate_path(fpath)
                 if ok:
                     candidate_paths.append(fpath)
 
-        read_tasks = [
-            loop_cp.run_in_executor(None, _safe_read, p)
-            for p in candidate_paths
-        ]
+        read_tasks = [loop_cp.run_in_executor(None, _safe_read, p) for p in candidate_paths]
         results = await asyncio.gather(*read_tasks)
         snapshot: dict[str, str | None] = {k: v for k, v in results if v is not None}
 
@@ -214,7 +220,11 @@ class VcHandler(BaseHandler):
         return (
             f"✓ Checkpoint '{label}' saved "
             f"({len(snapshot)} file{'s' if len(snapshot) != 1 else ''})."
-            + (f"\n  Files: {', '.join(Path(k).name for k in list(snapshot)[:10])}" if snapshot else "")
+            + (
+                f"\n  Files: {', '.join(Path(k).name for k in list(snapshot)[:10])}"
+                if snapshot
+                else ""
+            )
         )
 
     # ── rollback ──────────────────────────────────────────────────────────────

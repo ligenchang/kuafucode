@@ -50,7 +50,7 @@ class SessionStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 "INSERT INTO sessions (workspace, created_at, updated_at, messages) VALUES (?, ?, ?, ?)",
-                (workspace, now, now, "[]")
+                (workspace, now, now, "[]"),
             )
             session_id = cursor.lastrowid
             conn.commit()
@@ -66,7 +66,7 @@ class SessionStore:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT id, workspace, created_at, updated_at, messages, summary FROM sessions WHERE id = ?",
-                (session_id,)
+                (session_id,),
             ).fetchone()
         if not row:
             return None
@@ -84,7 +84,7 @@ class SessionStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 "UPDATE sessions SET updated_at = ?, messages = ?, summary = ? WHERE id = ?",
-                (now, json.dumps(session.messages), session.summary, session.id)
+                (now, json.dumps(session.messages), session.summary, session.id),
             )
             conn.commit()
         session.updated_at = now
@@ -94,12 +94,16 @@ class SessionStore:
             rows = conn.execute(
                 "SELECT id, workspace, created_at, updated_at, messages, summary FROM sessions "
                 "WHERE workspace = ? ORDER BY updated_at DESC LIMIT ?",
-                (workspace, limit)
+                (workspace, limit),
             ).fetchall()
         return [
             Session(
-                id=row[0], workspace=row[1], created_at=row[2],
-                updated_at=row[3], messages=json.loads(row[4]), summary=row[5]
+                id=row[0],
+                workspace=row[1],
+                created_at=row[2],
+                updated_at=row[3],
+                messages=json.loads(row[4]),
+                summary=row[5],
             )
             for row in rows
         ]

@@ -13,13 +13,14 @@ from nvagent.core.client import NIMClient, TaskType
 # Thresholds
 # ─────────────────────────────────────────────────────────────────────────────
 
-COMPACT_MSG_THRESHOLD = 40   # compact when history exceeds this many messages
-COMPACT_KEEP_RECENT   = 8    # always keep this many recent messages uncompacted
+COMPACT_MSG_THRESHOLD = 40  # compact when history exceeds this many messages
+COMPACT_KEEP_RECENT = 8  # always keep this many recent messages uncompacted
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Auto-compaction (called by the agent loop)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 async def compact_history(
     client: NIMClient,
@@ -37,8 +38,8 @@ async def compact_history(
         return
 
     keep_start = len(msgs) - COMPACT_KEEP_RECENT
-    old_msgs   = msgs[:keep_start]
-    keep_msgs  = msgs[keep_start:]
+    old_msgs = msgs[:keep_start]
+    keep_msgs = msgs[keep_start:]
 
     history_text = "\n\n".join(
         f"{m['role'].upper()}: {m.get('content') or ''}"

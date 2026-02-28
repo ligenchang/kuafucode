@@ -77,67 +77,67 @@ class ToolExecutor:
         self.workspace = self._ctx.workspace
 
         # ── Handler instances ─────────────────────────────────────────────────
-        self._file     = FileHandler(self._ctx)
-        self._search   = SearchHandler(self._ctx)
-        self._git      = GitHandler(self._ctx)
-        self._code     = CodeHandler(self._ctx)
-        self._memory   = MemoryHandler(self._ctx)
-        self._exec     = ExecHandler(self._ctx)
-        self._vc       = VcHandler(self._ctx)
+        self._file = FileHandler(self._ctx)
+        self._search = SearchHandler(self._ctx)
+        self._git = GitHandler(self._ctx)
+        self._code = CodeHandler(self._ctx)
+        self._memory = MemoryHandler(self._ctx)
+        self._exec = ExecHandler(self._ctx)
+        self._vc = VcHandler(self._ctx)
         self._notebook = NotebookHandler(self._ctx)
-        self._url      = UrlHandler(self._ctx)
-        self._todo     = TodoHandler(self._ctx)
+        self._url = UrlHandler(self._ctx)
+        self._todo = TodoHandler(self._ctx)
 
         # ── Dispatch table ────────────────────────────────────────────────────
         self._dispatch: dict[str, object] = {
             # file
-            "read_file":           self._file.read_file,
-            "write_file":          self._file.write_file,
-            "write_files":         self._file.write_files,
-            "edit_file":           self._file.edit_file,
-            "delete_file":         self._file.delete_file,
-            "list_dir":            self._file.list_dir,
-            "str_replace_editor":  self._file.str_replace_editor,
+            "read_file": self._file.read_file,
+            "write_file": self._file.write_file,
+            "write_files": self._file.write_files,
+            "edit_file": self._file.edit_file,
+            "delete_file": self._file.delete_file,
+            "list_dir": self._file.list_dir,
+            "str_replace_editor": self._file.str_replace_editor,
             # search
-            "search_code":     self._search.search_code,
-            "find_symbol":     self._search.find_symbol,
+            "search_code": self._search.search_code,
+            "find_symbol": self._search.find_symbol,
             "find_definition": self._search.find_definition,
             "find_references": self._search.find_references,
             # git
-            "git_status":      self._git.git_status,
-            "git_diff":        self._git.git_diff,
-            "git_add":         self._git.git_add,
-            "git_commit":      self._git.git_commit,
-            "git_log":         self._git.git_log,
+            "git_status": self._git.git_status,
+            "git_diff": self._git.git_diff,
+            "git_add": self._git.git_add,
+            "git_commit": self._git.git_commit,
+            "git_log": self._git.git_log,
             # code intelligence
-            "get_symbols":     self._code.get_symbols,
-            "get_dep_graph":   self._code.get_dep_graph,
-            "run_analysis":    self._code.run_analysis,
+            "get_symbols": self._code.get_symbols,
+            "get_dep_graph": self._code.get_dep_graph,
+            "run_analysis": self._code.run_analysis,
             # memory
-            "update_memory":   self._memory.update_memory,
-            "memory_learn":    self._memory.memory_learn,
-            "memory_recall":   self._memory.memory_recall,
-            "memory_forget":   self._memory.memory_forget,
-            "memory_note":     self._memory.memory_note,
+            "update_memory": self._memory.update_memory,
+            "memory_learn": self._memory.memory_learn,
+            "memory_recall": self._memory.memory_recall,
+            "memory_forget": self._memory.memory_forget,
+            "memory_note": self._memory.memory_note,
             # execution
-            "run_command":     self._exec.run_command,
-            "run_tests":       self._exec.run_tests,
-            "run_formatter":   self._exec.run_formatter,
-            "find_files":      self._exec.find_files,
+            "run_command": self._exec.run_command,
+            "run_tests": self._exec.run_tests,
+            "run_formatter": self._exec.run_formatter,
+            "find_files": self._exec.find_files,
             # version control / patches
-            "apply_patch":     self._vc.apply_patch,
-            "checkpoint":      self._vc.checkpoint,
-            "rollback":        self._vc.rollback,
+            "apply_patch": self._vc.apply_patch,
+            "checkpoint": self._vc.checkpoint,
+            "rollback": self._vc.rollback,
             # notebook
-            "read_notebook":   self._notebook.read_notebook,
-            "edit_notebook":   self._notebook.edit_notebook,
+            "read_notebook": self._notebook.read_notebook,
+            "edit_notebook": self._notebook.edit_notebook,
             # url
-            "read_url":        self._url.read_url,
+            "read_url": self._url.read_url,
             # todo
-            "todo_write":      self._todo.todo_write,
-            "todo_read":       self._todo.todo_read,
+            "todo_write": self._todo.todo_write,
+            "todo_read": self._todo.todo_read,
             # undo (implemented directly — touches undo_stack on ctx)
-            "undo_last_turn":  self.undo_last_turn,
+            "undo_last_turn": self.undo_last_turn,
         }
 
         # Pre-cache valid parameter names per tool to avoid inspect overhead per call.
@@ -146,12 +146,9 @@ class ToolExecutor:
             try:
                 _sig = inspect.signature(_tfn)
                 _has_varkw = any(
-                    p.kind == inspect.Parameter.VAR_KEYWORD
-                    for p in _sig.parameters.values()
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in _sig.parameters.values()
                 )
-                self._dispatch_params[_tname] = (
-                    None if _has_varkw else frozenset(_sig.parameters)
-                )
+                self._dispatch_params[_tname] = None if _has_varkw else frozenset(_sig.parameters)
             except (ValueError, TypeError):
                 self._dispatch_params[_tname] = None
 

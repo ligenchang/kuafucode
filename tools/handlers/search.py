@@ -38,7 +38,9 @@ class SearchHandler(BaseHandler):
         if self.ctx._rg_path:
             return await self._search_rg(query, search_path, file_pattern, regex, case_sensitive)
         else:
-            return await self._search_python(query, search_path, file_pattern, regex, case_sensitive)
+            return await self._search_python(
+                query, search_path, file_pattern, regex, case_sensitive
+            )
 
     async def _search_rg(self, query, search_path, file_pattern, regex, case_sensitive) -> str:
         cmd = [self.ctx._rg_path, "--line-number", "--no-heading", "--color=never"]
@@ -69,7 +71,9 @@ class SearchHandler(BaseHandler):
                 output = "\n".join(lines) + f"\n... (showing first 100 of more results)"
             return output
         except Exception:
-            return await self._search_python(query, search_path, file_pattern, regex, case_sensitive)
+            return await self._search_python(
+                query, search_path, file_pattern, regex, case_sensitive
+            )
 
     async def _search_python(self, query, search_path, file_pattern, regex, case_sensitive) -> str:
         pattern = None
@@ -93,8 +97,18 @@ class SearchHandler(BaseHandler):
                     if file_pattern and not fnmatch.fnmatch(fname, file_pattern):
                         continue
                     fpath = Path(root) / fname
-                    if fpath.suffix in {".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
-                                        ".jpg", ".png", ".gif", ".pdf"}:
+                    if fpath.suffix in {
+                        ".pyc",
+                        ".pyo",
+                        ".so",
+                        ".dll",
+                        ".exe",
+                        ".bin",
+                        ".jpg",
+                        ".png",
+                        ".gif",
+                        ".pdf",
+                    }:
                         continue
                     try:
                         content = fpath.read_text(encoding="utf-8", errors="replace")
@@ -147,7 +161,9 @@ class SearchHandler(BaseHandler):
         if not matches:
             return f"No symbols found matching {query!r}."
 
-        lines = [f"## Symbols matching {query!r} ({len(matches)} result{'s' if len(matches) != 1 else ''}):"]
+        lines = [
+            f"## Symbols matching {query!r} ({len(matches)} result{'s' if len(matches) != 1 else ''}):"
+        ]
         for m in matches[:max_results]:
             lines.append(m.render(self.ctx.workspace))
         return "\n".join(lines)
@@ -190,7 +206,8 @@ class SearchHandler(BaseHandler):
                 hint_paths.append(hp)
 
         refs = find_references(
-            name, self.ctx.workspace,
+            name,
+            self.ctx.workspace,
             hint_paths=hint_paths or None,
             include_definitions=include_definitions,
         )

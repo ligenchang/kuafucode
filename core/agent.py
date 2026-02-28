@@ -49,14 +49,13 @@ from nvagent.core.agent_toolexec import ToolBatchExecutor
 logger = logging.getLogger(__name__)
 
 # O(1) name -> schema lookup used by callers that need the full schema list
-TOOL_SCHEMAS_BY_NAME: dict[str, dict] = {
-    s["function"]["name"]: s for s in TOOL_SCHEMAS
-}
+TOOL_SCHEMAS_BY_NAME: dict[str, dict] = {s["function"]["name"]: s for s in TOOL_SCHEMAS}
 
 
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
+
 
 class Agent:
     """The nvagent coding agent.
@@ -151,14 +150,14 @@ class Agent:
         def _prewarm() -> None:
             try:
                 from nvagent.core.retrieval import get_retrieval_index
+
                 idx = get_retrieval_index(workspace)
                 if not idx._built:
                     idx.build()
             except Exception:
                 pass
-        threading.Thread(
-            target=_prewarm, daemon=True, name="nvagent-prewarm"
-        ).start()
+
+        threading.Thread(target=_prewarm, daemon=True, name="nvagent-prewarm").start()
 
     # -------------------------------------------------------------------------
     # Lifecycle helpers
@@ -204,18 +203,19 @@ class Agent:
             if m.get("content") and m.get("role") in ("user", "assistant")
         )
         summary_prompt = [
-            {"role": "system", "content": (
-                "You are a concise summariser. Summarise the conversation history "
-                "below into a tight bullet-point summary (<=200 words) preserving "
-                "all important technical decisions, file paths, and context."
-            )},
+            {
+                "role": "system",
+                "content": (
+                    "You are a concise summariser. Summarise the conversation history "
+                    "below into a tight bullet-point summary (<=200 words) preserving "
+                    "all important technical decisions, file paths, and context."
+                ),
+            },
             {"role": "user", "content": history_text[:12000]},
         ]
         task_type = classify_task("")
         summary_text = ""
-        async for ev in self.client.stream_chat(
-            messages=summary_prompt, tools=[], task=task_type
-        ):
+        async for ev in self.client.stream_chat(messages=summary_prompt, tools=[], task=task_type):
             if ev.type == "token":
                 summary_text += ev.data
             elif ev.type in ("done", "error"):
@@ -270,23 +270,18 @@ class Agent:
             try:
                 await self._mcp_client.start()
             except Exception as _mcp_exc:
-                logger.warning(
-                    "MCP startup error (continuing without MCP): %s", _mcp_exc
-                )
+                logger.warning("MCP startup error (continuing without MCP): %s", _mcp_exc)
             self._mcp_started = True
 
         _active_schemas = self.tools.active_schemas
-        _schemas_by_name: dict[str, dict] = {
-            s["function"]["name"]: s for s in _active_schemas
-        }
+        _schemas_by_name: dict[str, dict] = {s["function"]["name"]: s for s in _active_schemas}
 
         # -- Session JSONL log ------------------------------------------------
         import datetime as _dt
+
         _log_dir = self.workspace / ".nvagent" / "logs"
         _log_dir.mkdir(parents=True, exist_ok=True)
-        _log_event = make_session_logger(
-            _log_dir / f"session_{self.session.id}.jsonl"
-        )
+        _log_event = make_session_logger(_log_dir / f"session_{self.session.id}.jsonl")
 
         # -- Dry-run banner ---------------------------------------------------
         if self.config.agent.dry_run:
@@ -330,8 +325,7 @@ class Agent:
         # -- Planning phase ---------------------------------------------------
         _msg_lower = user_message.strip().lower()
         _skip_plan = any(
-            _msg_lower == kw or _msg_lower.startswith(kw + " ")
-            for kw in SKIP_PLAN_WORDS
+            _msg_lower == kw or _msg_lower.startswith(kw + " ") for kw in SKIP_PLAN_WORDS
         )
 
         plan: Optional[Plan] = None
@@ -341,9 +335,7 @@ class Agent:
         if not _skip_plan:
             _ctx_hint = system_prompt[:400] if system_prompt else ""
             _t_plan_start = time.monotonic()
-            _plan_task = asyncio.ensure_future(
-                self.planner.decompose(user_message, _ctx_hint)
-            )
+            _plan_task = asyncio.ensure_future(self.planner.decompose(user_message, _ctx_hint))
 
         self.plan = None
         self._pending_plan_correction = None
@@ -360,9 +352,7 @@ class Agent:
 
         if plan and plan.steps:
             system_prompt += plan.to_prompt_block()
-            yield AgentEvent(
-                type="plan", data={"task": plan.task, "steps": plan.to_list()}
-            )
+            yield AgentEvent(type="plan", data={"task": plan.task, "steps": plan.to_list()})
             if self.plan_confirm_fn is not None:
                 plan_response = await self.plan_confirm_fn(plan, user_message)
                 if plan_response is not None:
@@ -380,9 +370,7 @@ class Agent:
         _t_stage = time.monotonic()
         if self.config.safety.git_checkpoint:
             try:
-                sha = await self.git.checkpoint(
-                    f"nvagent: pre-task [{user_message[:60].strip()}]"
-                )
+                sha = await self.git.checkpoint(f"nvagent: pre-task [{user_message[:60].strip()}]")
                 if sha:
                     yield AgentEvent(
                         type="status",
@@ -418,9 +406,7 @@ class Agent:
 
         if self._pending_plan_correction:
             _corr = self._pending_plan_correction
-            messages.append(
-                {"role": "user", "content": f"[Plan review feedback]: {_corr}"}
-            )
+            messages.append({"role": "user", "content": f"[Plan review feedback]: {_corr}"})
             self.session.messages.append(
                 {"role": "user", "content": f"[Plan review feedback]: {_corr}"}
             )
@@ -459,24 +445,31 @@ class Agent:
             if _prev_batch_wrote_files:
                 _prev_batch_wrote_files = False
                 _remaining_now = (
-                    [s for s in plan.steps
-                     if s.status not in (StepStatus.DONE, StepStatus.SKIPPED, StepStatus.FAILED)]
-                    if plan and plan.steps else []
+                    [
+                        s
+                        for s in plan.steps
+                        if s.status not in (StepStatus.DONE, StepStatus.SKIPPED, StepStatus.FAILED)
+                    ]
+                    if plan and plan.steps
+                    else []
                 )
                 if _remaining_now:
                     _force_tool_use = True
-                    _rem_titles_now = ", ".join(
-                        f'"{{s.title}}"' for s in _remaining_now[:5]
-                    )
+                    _rem_titles_now = ", ".join(f'"{{s.title}}"' for s in _remaining_now[:5])
                     if len(_remaining_now) > 5:
                         _rem_titles_now += f" and {len(_remaining_now) - 5} more"
-                    messages.append({"role": "user", "content": (
-                        f"[CONTINUE NOW — {len(_remaining_now)} step(s) remain:"
-                        f" {_rem_titles_now}]\n"
-                        "You MUST call write_files (or another tool) IMMEDIATELY.\n"
-                        "Do NOT write any text. Do NOT summarize what you just did.\n"
-                        "Make your tool call right now."
-                    )})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"[CONTINUE NOW — {len(_remaining_now)} step(s) remain:"
+                                f" {_rem_titles_now}]\n"
+                                "You MUST call write_files (or another tool) IMMEDIATELY.\n"
+                                "Do NOT write any text. Do NOT summarize what you just did.\n"
+                                "Make your tool call right now."
+                            ),
+                        }
+                    )
                     _ephemeral_count += 1
 
             if self._cancelled:
@@ -532,14 +525,19 @@ class Agent:
 
             # Think budget exceeded -> inject concise directive and retry
             if sr.think_budget_exceeded:
-                messages.append({"role": "user", "content": (
-                    "[System] Your previous response spent too long in the reasoning/"
-                    "thinking phase and exceeded the allowed thinking budget.\n"
-                    "Please respond IMMEDIATELY and CONCISELY:\n"
-                    " * Skip lengthy internal analysis\n"
-                    " * Make your tool call or give your answer directly\n"
-                    " * If you need to reason, use at most 2-3 short sentences"
-                )})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "[System] Your previous response spent too long in the reasoning/"
+                            "thinking phase and exceeded the allowed thinking budget.\n"
+                            "Please respond IMMEDIATELY and CONCISELY:\n"
+                            " * Skip lengthy internal analysis\n"
+                            " * Make your tool call or give your answer directly\n"
+                            " * If you need to reason, use at most 2-3 short sentences"
+                        ),
+                    }
+                )
                 _ephemeral_count += 1
                 _flush_perf()
                 continue
@@ -548,38 +546,41 @@ class Agent:
             if not sr.tool_calls_data:
                 if sr.truncated:
                     if sr.assistant_content:
-                        messages.append(
-                            {"role": "assistant", "content": sr.assistant_content}
-                        )
-                    messages.append({"role": "user", "content": (
-                        "[Your previous response was truncated because it exceeded "
-                        "the token limit.]\n"
-                        "Please continue your work, but write FEWER files per tool call. "
-                        "Split large files into separate write_file calls. "
-                        "Pick up from where you left off and complete the remaining tasks."
-                    )})
+                        messages.append({"role": "assistant", "content": sr.assistant_content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "[Your previous response was truncated because it exceeded "
+                                "the token limit.]\n"
+                                "Please continue your work, but write FEWER files per tool call. "
+                                "Split large files into separate write_file calls. "
+                                "Pick up from where you left off and complete the remaining tasks."
+                            ),
+                        }
+                    )
                     self.session.messages.append(messages[-1])
                     _ephemeral_count = 0
                     turns += 1
                     continue
 
                 if sr.assistant_content:
-                    messages.append(
-                        {"role": "assistant", "content": sr.assistant_content}
-                    )
+                    messages.append({"role": "assistant", "content": sr.assistant_content})
                     self.session.messages.append(
                         {"role": "assistant", "content": sr.assistant_content}
                     )
 
                 _remaining_steps = (
-                    [s for s in plan.steps
-                     if s.status not in (StepStatus.DONE, StepStatus.SKIPPED, StepStatus.FAILED)]
-                    if plan and plan.steps else []
+                    [
+                        s
+                        for s in plan.steps
+                        if s.status not in (StepStatus.DONE, StepStatus.SKIPPED, StepStatus.FAILED)
+                    ]
+                    if plan and plan.steps
+                    else []
                 )
                 _incomplete_plan = bool(_remaining_steps) and self._plan_nudge_count < 5
-                _last_msg_text = (
-                    (messages[-1].get("content") or "").lower() if messages else ""
-                )
+                _last_msg_text = (messages[-1].get("content") or "").lower() if messages else ""
                 _talking_not_doing = (
                     plan is not None
                     and any(p in _last_msg_text for p in PREMATURE_STOP_PHRASES)
@@ -589,14 +590,11 @@ class Agent:
                 if _incomplete_plan or _talking_not_doing:
                     self._plan_nudge_count += 1
                     if _incomplete_plan:
-                        _rem_titles = ", ".join(
-                            f'"{{s.title}}"' for s in _remaining_steps[:5]
-                        )
+                        _rem_titles = ", ".join(f'"{{s.title}}"' for s in _remaining_steps[:5])
                         if len(_remaining_steps) > 5:
                             _rem_titles += f" and {len(_remaining_steps) - 5} more"
                         _plan_block = (
-                            plan.to_prompt_block()
-                            if hasattr(plan, "to_prompt_block") else ""
+                            plan.to_prompt_block() if hasattr(plan, "to_prompt_block") else ""
                         )
                         _nudge = (
                             f"TOOL CALL REQUIRED -- {len(_remaining_steps)} step(s) not yet "
@@ -629,17 +627,18 @@ class Agent:
                 self._total_tokens += total_tokens
                 self._total_input_tokens += _total_input_tokens
                 self._total_output_tokens += _total_output_tokens
-                cost = cost_usd(
-                    self._total_input_tokens, self._total_output_tokens, model
+                cost = cost_usd(self._total_input_tokens, self._total_output_tokens, model)
+                _log_event(
+                    "done",
+                    {
+                        "tokens": total_tokens,
+                        "input_tokens": _total_input_tokens,
+                        "output_tokens": _total_output_tokens,
+                        "cost_usd": cost,
+                        "turns": turns,
+                        "files_changed": list(self.tools.changed_files),
+                    },
                 )
-                _log_event("done", {
-                    "tokens": total_tokens,
-                    "input_tokens": _total_input_tokens,
-                    "output_tokens": _total_output_tokens,
-                    "cost_usd": cost,
-                    "turns": turns,
-                    "files_changed": list(self.tools.changed_files),
-                })
                 try:
                     mem = get_memory(self.workspace)
                     changed = list(self.tools.changed_files)
@@ -666,10 +665,10 @@ class Agent:
                 _flush_perf()
 
                 # Kick off speculative context prefetch for the next turn
-                _prefetch_paths  = list(ctx.active_paths)
-                _prefetch_key    = frozenset(ctx.active_paths)
-                _prefetch_depth  = len(self.tools.undo_stack)
-                _prefetch_ws     = self.workspace
+                _prefetch_paths = list(ctx.active_paths)
+                _prefetch_key = frozenset(ctx.active_paths)
+                _prefetch_depth = len(self.tools.undo_stack)
+                _prefetch_ws = self.workspace
                 _prefetch_config = self.config
 
                 async def _speculative_prefetch() -> None:
@@ -686,9 +685,7 @@ class Agent:
                                 max_tokens=8_000,
                             ),
                         )
-                        self._ctx_prefetch_result = (
-                            _result, _prefetch_key, _prefetch_depth
-                        )
+                        self._ctx_prefetch_result = (_result, _prefetch_key, _prefetch_depth)
                     except Exception:
                         pass
 
@@ -722,49 +719,39 @@ class Agent:
             # -- Mid-turn user correction -------------------------------------
             try:
                 correction = self.correction_queue.get_nowait()
-                messages.append(
-                    {"role": "user", "content": f"[User correction]: {correction}"}
-                )
+                messages.append({"role": "user", "content": f"[User correction]: {correction}"})
                 self.session.messages.append(
                     {"role": "user", "content": f"[User correction]: {correction}"}
                 )
-                yield AgentEvent(
-                    type="status", data=f"Correction injected: {correction}"
-                )
+                yield AgentEvent(type="status", data=f"Correction injected: {correction}")
             except asyncio.QueueEmpty:
                 pass
 
             if self.tools.changed_files:
-                yield AgentEvent(
-                    type="files_changed", data=list(self.tools.changed_files)
-                )
+                yield AgentEvent(type="files_changed", data=list(self.tools.changed_files))
 
             # Compressed turn summary for session persistence
             _tool_summaries = []
             for tc in sr.tool_calls_data:
                 _result_content = ""
                 for _msg in reversed(messages):
-                    if (
-                        _msg.get("role") == "tool"
-                        and _msg.get("tool_call_id") == tc["id"]
-                    ):
+                    if _msg.get("role") == "tool" and _msg.get("tool_call_id") == tc["id"]:
                         _result_content = str(_msg.get("content", ""))[:200]
                         break
                 _tool_summaries.append(
                     f"{tc['name']}("
-                    + ", ".join(
-                        f"{k}={str(v)[:40]}"
-                        for k, v in list(tc["args"].items())[:3]
-                    )
+                    + ", ".join(f"{k}={str(v)[:40]}" for k, v in list(tc["args"].items())[:3])
                     + f") -> {_result_content}"
                 )
-            self.session.messages.append({
-                "role": "assistant",
-                "content": (
-                    f"[Turn summary -- {len(sr.tool_calls_data)} tool call(s)]\n"
-                    + "\n".join(_tool_summaries)
-                ),
-            })
+            self.session.messages.append(
+                {
+                    "role": "assistant",
+                    "content": (
+                        f"[Turn summary -- {len(sr.tool_calls_data)} tool call(s)]\n"
+                        + "\n".join(_tool_summaries)
+                    ),
+                }
+            )
             self._save_session_bg()
 
             # Proactive compaction advisory
@@ -782,8 +769,6 @@ class Agent:
         yield AgentEvent(
             type="error",
             data={
-                "message": (
-                    f"Reached maximum turns ({self.MAX_TURNS}). Task may be incomplete."
-                )
+                "message": (f"Reached maximum turns ({self.MAX_TURNS}). Task may be incomplete.")
             },
         )

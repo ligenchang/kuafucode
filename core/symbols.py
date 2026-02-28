@@ -34,16 +34,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Data model
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Symbol:
-    kind: str          # "function" | "class" | "method" | "import" | "type" | "const"
+    kind: str  # "function" | "class" | "method" | "import" | "type" | "const"
     name: str
-    signature: str     # one-line human-readable signature
+    signature: str  # one-line human-readable signature
     line: int = 0
     docstring: str = ""
 
@@ -57,7 +57,7 @@ class SymbolIndex:
     path: Path
     language: str
     symbols: list[Symbol] = field(default_factory=list)
-    imports: list[str] = field(default_factory=list)   # raw import strings
+    imports: list[str] = field(default_factory=list)  # raw import strings
 
     def functions(self) -> list[Symbol]:
         return [s for s in self.symbols if s.kind in ("function", "method")]
@@ -90,25 +90,25 @@ class SymbolIndex:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _EXT_LANG: dict[str, str] = {
-    ".py":   "python",
-    ".pyi":  "python",
-    ".js":   "javascript",
-    ".mjs":  "javascript",
-    ".cjs":  "javascript",
-    ".jsx":  "javascript",
-    ".ts":   "typescript",
-    ".tsx":  "typescript",
-    ".go":   "go",
-    ".rs":   "rust",
+    ".py": "python",
+    ".pyi": "python",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".go": "go",
+    ".rs": "rust",
     ".java": "java",
-    ".cs":   "csharp",
-    ".c":    "c",
-    ".h":    "c",
-    ".cpp":  "cpp",
-    ".cc":   "cpp",
-    ".hpp":  "cpp",
-    ".rb":   "ruby",
-    ".php":  "php",
+    ".cs": "csharp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".hpp": "cpp",
+    ".rb": "ruby",
+    ".php": "php",
 }
 
 
@@ -119,6 +119,7 @@ def _detect_language(path: Path) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Python extractor  (ast-based)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _py_ann(node: ast.expr | None) -> str:
     """Unparse a type annotation node to string."""
@@ -251,11 +252,9 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
             for alias in node.names:
                 idx.imports.append(f"import {alias.name}")
         elif isinstance(node, ast.ImportFrom):
-            dots = "." * (node.level or 0)   # preserve relative import dots
+            dots = "." * (node.level or 0)  # preserve relative import dots
             mod = node.module or ""
-            names = ", ".join(
-                (a.asname if a.asname else a.name) for a in node.names
-            )
+            names = ", ".join((a.asname if a.asname else a.name) for a in node.names)
             idx.imports.append(f"from {dots}{mod} import {names}")
 
     # Walk top level + class bodies for functions/classes
@@ -278,29 +277,41 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
                 # Skip __init__ bodies for dataclasses — fields are captured as annassign
                 if is_dataclass_ctx and node.name == "__init__":
                     continue
-                idx.symbols.append(Symbol(
-                    kind=kind, name=node.name,
-                    signature=sig, line=node.lineno, docstring=doc,
-                ))
+                idx.symbols.append(
+                    Symbol(
+                        kind=kind,
+                        name=node.name,
+                        signature=sig,
+                        line=node.lineno,
+                        docstring=doc,
+                    )
+                )
 
             elif isinstance(node, ast.ClassDef):
                 bases = ", ".join(_py_ann(b) for b in node.bases) if node.bases else ""
                 base_str = f"({bases})" if bases else ""
                 doc = _py_get_docstring(node)
-                is_dc  = _py_is_dataclass(node)
+                is_dc = _py_is_dataclass(node)
                 bnames = _py_base_names(node)
-                is_td  = "TypedDict" in bnames
-                is_pt  = "Protocol" in bnames
+                is_td = "TypedDict" in bnames
+                is_pt = "Protocol" in bnames
                 # Build class signature: include decorator(s) and tag special kinds
                 dec_str = _py_class_decorators(node)
                 tag = ""
-                if is_td:  tag = "  # TypedDict"
-                elif is_pt: tag = "  # Protocol"
+                if is_td:
+                    tag = "  # TypedDict"
+                elif is_pt:
+                    tag = "  # Protocol"
                 sig = f"{dec_str}class {node.name}{base_str}:{tag}"
-                idx.symbols.append(Symbol(
-                    kind="class", name=node.name,
-                    signature=sig, line=node.lineno, docstring=doc,
-                ))
+                idx.symbols.append(
+                    Symbol(
+                        kind="class",
+                        name=node.name,
+                        signature=sig,
+                        line=node.lineno,
+                        docstring=doc,
+                    )
+                )
                 _walk_body(
                     node.body,
                     class_name=node.name,
@@ -327,11 +338,14 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
                                 preview = ", ".join(names_list[:8])
                                 if len(names_list) > 8:
                                     preview += f", ... ({len(names_list)} total)"
-                                idx.symbols.append(Symbol(
-                                    kind="export", name="__all__",
-                                    signature=f"__all__ = [{preview}]",
-                                    line=node.lineno,
-                                ))
+                                idx.symbols.append(
+                                    Symbol(
+                                        kind="export",
+                                        name="__all__",
+                                        signature=f"__all__ = [{preview}]",
+                                        line=node.lineno,
+                                    )
+                                )
                         except Exception:
                             pass
                     # UPPER_CASE top-level constants
@@ -340,11 +354,14 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
                             val = ast.unparse(node.value)
                             if len(val) > 60:
                                 val = val[:60] + "..."
-                            idx.symbols.append(Symbol(
-                                kind="const", name=target.id,
-                                signature=f"{target.id} = {val}",
-                                line=node.lineno,
-                            ))
+                            idx.symbols.append(
+                                Symbol(
+                                    kind="const",
+                                    name=target.id,
+                                    signature=f"{target.id} = {val}",
+                                    line=node.lineno,
+                                )
+                            )
                         except Exception:
                             pass
 
@@ -369,18 +386,24 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
                             except Exception:
                                 pass
                         kind = "field"
-                        idx.symbols.append(Symbol(
-                            kind=kind, name=name,
-                            signature=f"    {name}: {ann}{default_part}",
-                            line=node.lineno,
-                        ))
+                        idx.symbols.append(
+                            Symbol(
+                                kind=kind,
+                                name=name,
+                                signature=f"    {name}: {ann}{default_part}",
+                                line=node.lineno,
+                            )
+                        )
                     else:
                         # Top-level annotated name (module-level type alias / var)
-                        idx.symbols.append(Symbol(
-                            kind="type", name=name,
-                            signature=f"{name}: {ann}",
-                            line=node.lineno,
-                        ))
+                        idx.symbols.append(
+                            Symbol(
+                                kind="type",
+                                name=name,
+                                signature=f"{name}: {ann}",
+                                line=node.lineno,
+                            )
+                        )
                 except Exception:
                     pass
 
@@ -392,19 +415,29 @@ def _extract_python(path: Path, source: str) -> SymbolIndex:
 # JavaScript / TypeScript extractor  (regex-based)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_JS_IMPORT    = re.compile(r'^(?:import\s+.*?from\s+[\'"]([^\'"]+)[\'"]|require\([\'"]([^\'"]+)[\'"]\))', re.MULTILINE)
-_JS_FUNCTION  = re.compile(
-    r'^(?:export\s+)?(?:export\s+default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(<[^>]*>)?\s*(\([^)]*\))\s*(?::\s*[\w<>\[\]|&\s,\.]+)?',
-    re.MULTILINE
+_JS_IMPORT = re.compile(
+    r'^(?:import\s+.*?from\s+[\'"]([^\'"]+)[\'"]|require\([\'"]([^\'"]+)[\'"]\))', re.MULTILINE
 )
-_JS_ARROW     = re.compile(
-    r'^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:<[^>]*>)?\s*(\([^)]*\)|[\w]+)\s*(?::\s*[\w<>\[\]|&\s,\.]+)?\s*=>',
-    re.MULTILINE
+_JS_FUNCTION = re.compile(
+    r"^(?:export\s+)?(?:export\s+default\s+)?(?:async\s+)?function\s*\*?\s*(\w+)\s*(<[^>]*>)?\s*(\([^)]*\))\s*(?::\s*[\w<>\[\]|&\s,\.]+)?",
+    re.MULTILINE,
 )
-_JS_CLASS     = re.compile(r'^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+([\w.<>, ]+))?(?:\s+implements\s+([\w.<>, ]+))?', re.MULTILINE)
-_JS_METHOD    = re.compile(r'^\s+(?:(?:public|private|protected|static|async|readonly|abstract|override)\s+)*(\w+)\s*(?:<[^>]*>)?\s*(\([^)]*\))\s*(?::\s*[\w<>\[\]|&\s,\.]+)?\s*\{', re.MULTILINE)
-_TS_INTERFACE = re.compile(r'^(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?', re.MULTILINE)
-_TS_TYPE      = re.compile(r'^(?:export\s+)?type\s+(\w+)(?:<[^>]*>)?\s*=', re.MULTILINE)
+_JS_ARROW = re.compile(
+    r"^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?\s*=\s*(?:async\s+)?(?:<[^>]*>)?\s*(\([^)]*\)|[\w]+)\s*(?::\s*[\w<>\[\]|&\s,\.]+)?\s*=>",
+    re.MULTILINE,
+)
+_JS_CLASS = re.compile(
+    r"^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:\s+extends\s+([\w.<>, ]+))?(?:\s+implements\s+([\w.<>, ]+))?",
+    re.MULTILINE,
+)
+_JS_METHOD = re.compile(
+    r"^\s+(?:(?:public|private|protected|static|async|readonly|abstract|override)\s+)*(\w+)\s*(?:<[^>]*>)?\s*(\([^)]*\))\s*(?::\s*[\w<>\[\]|&\s,\.]+)?\s*\{",
+    re.MULTILINE,
+)
+_TS_INTERFACE = re.compile(
+    r"^(?:export\s+)?interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?", re.MULTILINE
+)
+_TS_TYPE = re.compile(r"^(?:export\s+)?type\s+(\w+)(?:<[^>]*>)?\s*=", re.MULTILINE)
 
 
 def _extract_js(path: Path, source: str, lang: str) -> SymbolIndex:
@@ -416,26 +449,61 @@ def _extract_js(path: Path, source: str, lang: str) -> SymbolIndex:
 
     for m in _JS_FUNCTION.finditer(source):
         sig = f"function {m.group(1)}{m.group(3) or '()'}"
-        idx.symbols.append(Symbol(kind="function", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="function",
+                name=m.group(1),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _JS_ARROW.finditer(source):
         sig = f"const {m.group(1)} = ({m.group(2)}) => ..."
-        idx.symbols.append(Symbol(kind="function", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="function",
+                name=m.group(1),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _JS_CLASS.finditer(source):
         extends = f" extends {m.group(2)}" if m.group(2) else ""
         sig = f"class {m.group(1)}{extends}"
-        idx.symbols.append(Symbol(kind="class", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="class",
+                name=m.group(1),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     if lang == "typescript":
         for m in _TS_INTERFACE.finditer(source):
             extends = f" extends {m.group(2)}" if m.group(2) else ""
             sig = f"interface {m.group(1)}{extends}"
-            idx.symbols.append(Symbol(kind="type", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+            idx.symbols.append(
+                Symbol(
+                    kind="type",
+                    name=m.group(1),
+                    signature=sig,
+                    line=source[: m.start()].count("\n") + 1,
+                )
+            )
 
         for m in _TS_TYPE.finditer(source):
             sig = f"type {m.group(1)} = ..."
-            idx.symbols.append(Symbol(kind="type", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+            idx.symbols.append(
+                Symbol(
+                    kind="type",
+                    name=m.group(1),
+                    signature=sig,
+                    line=source[: m.start()].count("\n") + 1,
+                )
+            )
 
     return idx
 
@@ -444,15 +512,18 @@ def _extract_js(path: Path, source: str, lang: str) -> SymbolIndex:
 # Go extractor  (regex-based)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_GO_IMPORT   = re.compile(r'"([\w./\-]+)"')
-_GO_FUNC     = re.compile(r'^func\s+(?:\(\s*\w+\s+[\*]?(\w+)\s*\)\s+)?(\w+)\s*(\([^)]*(?:\([^)]*\)[^)]*)*\))\s*([\(\w\*\[\], ]*)', re.MULTILINE)
-_GO_TYPE     = re.compile(r'^type\s+(\w+)\s+(struct|interface|[\w\[\]]+)', re.MULTILINE)
+_GO_IMPORT = re.compile(r'"([\w./\-]+)"')
+_GO_FUNC = re.compile(
+    r"^func\s+(?:\(\s*\w+\s+[\*]?(\w+)\s*\)\s+)?(\w+)\s*(\([^)]*(?:\([^)]*\)[^)]*)*\))\s*([\(\w\*\[\], ]*)",
+    re.MULTILINE,
+)
+_GO_TYPE = re.compile(r"^type\s+(\w+)\s+(struct|interface|[\w\[\]]+)", re.MULTILINE)
 
 
 def _extract_go(path: Path, source: str) -> SymbolIndex:
     idx = SymbolIndex(path=path, language="go")
 
-    import_block = re.search(r'import\s*\(([^)]+)\)', source, re.DOTALL)
+    import_block = re.search(r"import\s*\(([^)]+)\)", source, re.DOTALL)
     if import_block:
         for m in _GO_IMPORT.finditer(import_block.group(1)):
             idx.imports.append(f'import "{m.group(1)}"')
@@ -464,12 +535,23 @@ def _extract_go(path: Path, source: str) -> SymbolIndex:
         receiver = f"({m.group(1)}) " if m.group(1) else ""
         returns = f" {m.group(4).strip()}" if m.group(4) and m.group(4).strip() else ""
         sig = f"func {receiver}{m.group(2)}{m.group(3)}{returns}"
-        idx.symbols.append(Symbol(kind="function", name=m.group(2), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="function",
+                name=m.group(2),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _GO_TYPE.finditer(source):
         sig = f"type {m.group(1)} {m.group(2)}"
         kind = "class" if m.group(2) in ("struct", "interface") else "type"
-        idx.symbols.append(Symbol(kind=kind, name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind=kind, name=m.group(1), signature=sig, line=source[: m.start()].count("\n") + 1
+            )
+        )
 
     return idx
 
@@ -478,12 +560,15 @@ def _extract_go(path: Path, source: str) -> SymbolIndex:
 # Rust extractor  (regex-based)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_RS_USE    = re.compile(r'^use\s+([\w::{}, ]+);', re.MULTILINE)
-_RS_FN     = re.compile(r'^(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)(?:<[^>]*>)?\s*(\([^)]*\))\s*(?:->\s*([\w<>\[\]:&\s,\']+))?', re.MULTILINE)
-_RS_STRUCT = re.compile(r'^(?:pub(?:\s*\([^)]*\))?\s+)?struct\s+(\w+)(?:<[^>]*>)?', re.MULTILINE)
-_RS_ENUM   = re.compile(r'^(?:pub(?:\s*\([^)]*\))?\s+)?enum\s+(\w+)(?:<[^>]*>)?', re.MULTILINE)
-_RS_TRAIT  = re.compile(r'^(?:pub(?:\s*\([^)]*\))?\s+)?trait\s+(\w+)(?:<[^>]*>)?', re.MULTILINE)
-_RS_IMPL   = re.compile(r'^impl(?:<[^>]*>)?\s+(?:(\w+)\s+for\s+)?(\w+)(?:<[^>]*>)?', re.MULTILINE)
+_RS_USE = re.compile(r"^use\s+([\w::{}, ]+);", re.MULTILINE)
+_RS_FN = re.compile(
+    r"^(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)(?:<[^>]*>)?\s*(\([^)]*\))\s*(?:->\s*([\w<>\[\]:&\s,\']+))?",
+    re.MULTILINE,
+)
+_RS_STRUCT = re.compile(r"^(?:pub(?:\s*\([^)]*\))?\s+)?struct\s+(\w+)(?:<[^>]*>)?", re.MULTILINE)
+_RS_ENUM = re.compile(r"^(?:pub(?:\s*\([^)]*\))?\s+)?enum\s+(\w+)(?:<[^>]*>)?", re.MULTILINE)
+_RS_TRAIT = re.compile(r"^(?:pub(?:\s*\([^)]*\))?\s+)?trait\s+(\w+)(?:<[^>]*>)?", re.MULTILINE)
+_RS_IMPL = re.compile(r"^impl(?:<[^>]*>)?\s+(?:(\w+)\s+for\s+)?(\w+)(?:<[^>]*>)?", re.MULTILINE)
 
 
 def _extract_rust(path: Path, source: str) -> SymbolIndex:
@@ -495,21 +580,56 @@ def _extract_rust(path: Path, source: str) -> SymbolIndex:
     for m in _RS_FN.finditer(source):
         ret = f" -> {m.group(3).strip()}" if m.group(3) else ""
         sig = f"fn {m.group(1)}{m.group(2)}{ret}"
-        idx.symbols.append(Symbol(kind="function", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="function",
+                name=m.group(1),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _RS_STRUCT.finditer(source):
-        idx.symbols.append(Symbol(kind="class", name=m.group(1), signature=f"struct {m.group(1)}", line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="class",
+                name=m.group(1),
+                signature=f"struct {m.group(1)}",
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _RS_ENUM.finditer(source):
-        idx.symbols.append(Symbol(kind="type", name=m.group(1), signature=f"enum {m.group(1)}", line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="type",
+                name=m.group(1),
+                signature=f"enum {m.group(1)}",
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _RS_TRAIT.finditer(source):
-        idx.symbols.append(Symbol(kind="type", name=m.group(1), signature=f"trait {m.group(1)}", line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="type",
+                name=m.group(1),
+                signature=f"trait {m.group(1)}",
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _RS_IMPL.finditer(source):
         target = m.group(2)
-        trait  = f"{m.group(1)} for " if m.group(1) else ""
-        idx.symbols.append(Symbol(kind="class", name=target, signature=f"impl {trait}{target}", line=source[:m.start()].count("\n") + 1))
+        trait = f"{m.group(1)} for " if m.group(1) else ""
+        idx.symbols.append(
+            Symbol(
+                kind="class",
+                name=target,
+                signature=f"impl {trait}{target}",
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     return idx
 
@@ -518,9 +638,15 @@ def _extract_rust(path: Path, source: str) -> SymbolIndex:
 # Java / C# extractor  (regex-based)
 # ─────────────────────────────────────────────────────────────────────────────
 
-_JAVA_IMPORT  = re.compile(r'^import\s+([\w.]+);', re.MULTILINE)
-_JAVA_CLASS   = re.compile(r'^(?:public\s+|private\s+|protected\s+)?(?:abstract\s+|final\s+)?(?:class|interface|enum|record)\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+([\w, ]+))?(?:\s+implements\s+([\w, ]+))?', re.MULTILINE)
-_JAVA_METHOD  = re.compile(r'^\s+(?:(?:public|private|protected|static|final|abstract|synchronized|native|default|override)\s+)*(?:[\w<>\[\]]+\s+)+(\w+)\s*(\([^)]*\))\s*(?:throws\s+[\w, ]+)?\s*\{', re.MULTILINE)
+_JAVA_IMPORT = re.compile(r"^import\s+([\w.]+);", re.MULTILINE)
+_JAVA_CLASS = re.compile(
+    r"^(?:public\s+|private\s+|protected\s+)?(?:abstract\s+|final\s+)?(?:class|interface|enum|record)\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+([\w, ]+))?(?:\s+implements\s+([\w, ]+))?",
+    re.MULTILINE,
+)
+_JAVA_METHOD = re.compile(
+    r"^\s+(?:(?:public|private|protected|static|final|abstract|synchronized|native|default|override)\s+)*(?:[\w<>\[\]]+\s+)+(\w+)\s*(\([^)]*\))\s*(?:throws\s+[\w, ]+)?\s*\{",
+    re.MULTILINE,
+)
 
 
 def _extract_java(path: Path, source: str) -> SymbolIndex:
@@ -532,11 +658,25 @@ def _extract_java(path: Path, source: str) -> SymbolIndex:
     for m in _JAVA_CLASS.finditer(source):
         extends = f" extends {m.group(2)}" if m.group(2) else ""
         sig = f"class {m.group(1)}{extends}"
-        idx.symbols.append(Symbol(kind="class", name=m.group(1), signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="class",
+                name=m.group(1),
+                signature=sig,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     for m in _JAVA_METHOD.finditer(source):
         parts = m.group(0).strip().rstrip("{").strip()
-        idx.symbols.append(Symbol(kind="method", name=m.group(1), signature=parts, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="method",
+                name=m.group(1),
+                signature=parts,
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     return idx
 
@@ -546,8 +686,11 @@ def _extract_java(path: Path, source: str) -> SymbolIndex:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _C_INCLUDE = re.compile(r'^#include\s+[<"]([\w./]+)[>"]', re.MULTILINE)
-_C_FUNC    = re.compile(r'^(?:static\s+|inline\s+|extern\s+)?(?:[\w:*&<>]+\s+)+(\w+)\s*(\([^)]+\))\s*(?:const\s*)?\{', re.MULTILINE)
-_C_STRUCT  = re.compile(r'^(?:typedef\s+)?(?:struct|class|union)\s+(\w+)', re.MULTILINE)
+_C_FUNC = re.compile(
+    r"^(?:static\s+|inline\s+|extern\s+)?(?:[\w:*&<>]+\s+)+(\w+)\s*(\([^)]+\))\s*(?:const\s*)?\{",
+    re.MULTILINE,
+)
+_C_STRUCT = re.compile(r"^(?:typedef\s+)?(?:struct|class|union)\s+(\w+)", re.MULTILINE)
 
 
 def _extract_c(path: Path, source: str, lang: str) -> SymbolIndex:
@@ -563,10 +706,21 @@ def _extract_c(path: Path, source: str, lang: str) -> SymbolIndex:
         sig = m.group(0).rstrip("{").strip()
         if len(sig) > 120:
             sig = sig[:120] + "..."
-        idx.symbols.append(Symbol(kind="function", name=name, signature=sig, line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="function", name=name, signature=sig, line=source[: m.start()].count("\n") + 1
+            )
+        )
 
     for m in _C_STRUCT.finditer(source):
-        idx.symbols.append(Symbol(kind="class", name=m.group(1), signature=f"struct {m.group(1)}", line=source[:m.start()].count("\n") + 1))
+        idx.symbols.append(
+            Symbol(
+                kind="class",
+                name=m.group(1),
+                signature=f"struct {m.group(1)}",
+                line=source[: m.start()].count("\n") + 1,
+            )
+        )
 
     return idx
 
@@ -575,7 +729,7 @@ def _extract_c(path: Path, source: str, lang: str) -> SymbolIndex:
 # Public: extract_symbols
 # ─────────────────────────────────────────────────────────────────────────────
 
-_MAX_FILE_BYTES = 512 * 1024   # skip files larger than 512KB
+_MAX_FILE_BYTES = 512 * 1024  # skip files larger than 512KB
 
 
 def extract_symbols(path: Path) -> SymbolIndex:
@@ -618,36 +772,93 @@ def extract_symbols(path: Path) -> SymbolIndex:
 try:
     _PY_STDLIB: frozenset[str] = frozenset(sys.stdlib_module_names)  # type: ignore[attr-defined]
 except AttributeError:
-    _PY_STDLIB = frozenset({
-        "abc", "ast", "asyncio", "base64", "builtins", "collections", "concurrent",
-        "contextlib", "copy", "dataclasses", "datetime", "decimal", "difflib",
-        "email", "enum", "fnmatch", "functools", "gc", "glob", "hashlib", "heapq",
-        "http", "importlib", "inspect", "io", "itertools", "json", "logging",
-        "math", "multiprocessing", "operator", "os", "pathlib", "pickle", "platform",
-        "pprint", "queue", "random", "re", "shutil", "signal", "socket", "sqlite3",
-        "ssl", "stat", "string", "struct", "subprocess", "sys", "tempfile", "textwrap",
-        "threading", "time", "traceback", "types", "typing", "unittest", "urllib",
-        "uuid", "warnings", "weakref", "xml", "zipfile",
-    })
+    _PY_STDLIB = frozenset(
+        {
+            "abc",
+            "ast",
+            "asyncio",
+            "base64",
+            "builtins",
+            "collections",
+            "concurrent",
+            "contextlib",
+            "copy",
+            "dataclasses",
+            "datetime",
+            "decimal",
+            "difflib",
+            "email",
+            "enum",
+            "fnmatch",
+            "functools",
+            "gc",
+            "glob",
+            "hashlib",
+            "heapq",
+            "http",
+            "importlib",
+            "inspect",
+            "io",
+            "itertools",
+            "json",
+            "logging",
+            "math",
+            "multiprocessing",
+            "operator",
+            "os",
+            "pathlib",
+            "pickle",
+            "platform",
+            "pprint",
+            "queue",
+            "random",
+            "re",
+            "shutil",
+            "signal",
+            "socket",
+            "sqlite3",
+            "ssl",
+            "stat",
+            "string",
+            "struct",
+            "subprocess",
+            "sys",
+            "tempfile",
+            "textwrap",
+            "threading",
+            "time",
+            "traceback",
+            "types",
+            "typing",
+            "unittest",
+            "urllib",
+            "uuid",
+            "warnings",
+            "weakref",
+            "xml",
+            "zipfile",
+        }
+    )
 
 
 # Pre-compiled regexes for Python import resolution in DependencyGraph.
 # Matches both "import foo.bar" and "from foo.bar import X" — group(1) is the
 # module path in both cases (stops at whitespace before 'import').
-_PY_ABS_IMPORT_RE = re.compile(r'^(?:from\s+|import\s+)([\w.]+)')
+_PY_ABS_IMPORT_RE = re.compile(r"^(?:from\s+|import\s+)([\w.]+)")
 # Extracts the names list from "from foo.bar import X, Y, Z" — group(1) = "X, Y, Z"
-_PY_FROM_IMPORT_RE = re.compile(r'^from\s+[\w.]+\s+import\s+(.+)$')
+_PY_FROM_IMPORT_RE = re.compile(r"^from\s+[\w.]+\s+import\s+(.+)$")
 
 
 @dataclass
 class DependencyNode:
     """All import information extracted from one source file."""
-    path: Path                         # resolved absolute path
+
+    path: Path  # resolved absolute path
     language: str
-    dep_files: list[Path]              # workspace-local files this file imports
-    external_pkgs: list[str]           # third-party / stdlib package names
-    raw_imports: list[str]             # raw import strings (for display / debug)
-    mtime: float = 0.0                 # mtime at parse time (staleness check)
+    dep_files: list[Path]  # workspace-local files this file imports
+    external_pkgs: list[str]  # third-party / stdlib package names
+    raw_imports: list[str]  # raw import strings (for display / debug)
+    mtime: float = 0.0  # mtime at parse time (staleness check)
 
 
 class DependencyGraph:
@@ -667,10 +878,10 @@ class DependencyGraph:
 
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace.resolve()
-        self._nodes:   dict[str, DependencyNode]  = {}   # resolved str → node
-        self._reverse: dict[str, set[str]]         = {}   # path_str → set(importers)
-        self._lock  = threading.Lock()
-        self._path_aliases:  dict[str, str] = {}    # @alias → base-dir (from tsconfig)
+        self._nodes: dict[str, DependencyNode] = {}  # resolved str → node
+        self._reverse: dict[str, set[str]] = {}  # path_str → set(importers)
+        self._lock = threading.Lock()
+        self._path_aliases: dict[str, str] = {}  # @alias → base-dir (from tsconfig)
         self._aliases_loaded = False
         # Can be overridden to share a symbol cache with WorkspaceIndex.
         # Default: call extract_symbols() directly (no shared cache).
@@ -708,9 +919,9 @@ class DependencyGraph:
             if not ts.exists():
                 continue
             try:
-                data  = json.loads(ts.read_text(encoding="utf-8"))
+                data = json.loads(ts.read_text(encoding="utf-8"))
                 paths = data.get("compilerOptions", {}).get("paths", {})
-                base  = data.get("compilerOptions", {}).get("baseUrl", ".")
+                base = data.get("compilerOptions", {}).get("baseUrl", ".")
                 base_dir = (self.workspace / base).resolve()
                 for alias_pattern, targets in paths.items():
                     # alias_pattern is like "@app/*" or "@utils"
@@ -727,7 +938,9 @@ class DependencyGraph:
     # ── Language-specific import resolvers ──────────────────────────────────
 
     def _resolve_python_import(
-        self, import_str: str, from_file: Path,
+        self,
+        import_str: str,
+        from_file: Path,
     ) -> tuple[list[Path], list[str]]:
         """
         Returns (local_files, external_names).
@@ -736,17 +949,17 @@ class DependencyGraph:
           - relative imports: `from .sister import Y`
           - __init__.py re-export chaining for `from pkg import X`
         """
-        local: list[Path]  = []
-        ext:   list[str]   = []
+        local: list[Path] = []
+        ext: list[str] = []
 
         # Relative imports: `from . import X` / `from .mod import Y`
-        rel_m = re.match(r'from ([\.]+)(\w[\w.]*)?\s+import\s+(.+)', import_str)
+        rel_m = re.match(r"from ([\.]+)(\w[\w.]*)?\s+import\s+(.+)", import_str)
         if rel_m:
-            dots  = rel_m.group(1)
-            mod   = rel_m.group(2) or ""
+            dots = rel_m.group(1)
+            mod = rel_m.group(2) or ""
             names = [n.strip().split(" as ")[0] for n in rel_m.group(3).split(",")]
-            base  = from_file.parent
-            for _ in range(len(dots) - 1):   # one dot = same dir, two dots = parent
+            base = from_file.parent
+            for _ in range(len(dots) - 1):  # one dot = same dir, two dots = parent
                 base = base.parent
             if mod:
                 sub = base / Path(mod.replace(".", "/"))
@@ -775,7 +988,7 @@ class DependencyGraph:
         if not m:
             return local, ext
 
-        mod_name  = m.group(1)
+        mod_name = m.group(1)
         top_level = mod_name.split(".")[0]
 
         # Stdlib → external (informational)
@@ -812,7 +1025,9 @@ class DependencyGraph:
         return local, ext
 
     def _resolve_js_import(
-        self, import_str: str, from_file: Path,
+        self,
+        import_str: str,
+        from_file: Path,
     ) -> tuple[list[Path], list[str]]:
         """
         Resolve a JS/TS import string.
@@ -820,7 +1035,7 @@ class DependencyGraph:
         """
         self._load_tsconfig_paths()
         local: list[Path] = []
-        ext:   list[str]  = []
+        ext: list[str] = []
 
         m = re.match(r"import '([^']+)'", import_str)
         if not m:
@@ -831,9 +1046,13 @@ class DependencyGraph:
         if raw.startswith("."):
             base = from_file.parent / raw
             for ext_sfx in (".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx", "/index.js"):
-                candidate = Path(str(base) + ext_sfx) if not raw.endswith(ext_sfx.lstrip("/")) else Path(str(base))
+                candidate = (
+                    Path(str(base) + ext_sfx)
+                    if not raw.endswith(ext_sfx.lstrip("/"))
+                    else Path(str(base))
+                )
                 # Cleaner approach: strip and try extensions
-                stripped = (from_file.parent / raw)
+                stripped = from_file.parent / raw
                 if ext_sfx.startswith("/"):
                     candidate = stripped / ext_sfx.lstrip("/")
                 else:
@@ -848,7 +1067,7 @@ class DependencyGraph:
         # @alias import (tsconfig.paths)
         for alias_prefix, alias_dir in self._path_aliases.items():
             if raw == alias_prefix or raw.startswith(alias_prefix + "/"):
-                remainder = raw[len(alias_prefix):].lstrip("/")
+                remainder = raw[len(alias_prefix) :].lstrip("/")
                 base = Path(alias_dir) / remainder
                 for ext_sfx in (".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.js"):
                     if ext_sfx.startswith("/"):
@@ -871,10 +1090,12 @@ class DependencyGraph:
         return local, ext
 
     def _resolve_go_import(
-        self, import_str: str, from_file: Path,
+        self,
+        import_str: str,
+        from_file: Path,
     ) -> tuple[list[Path], list[str]]:
         local: list[Path] = []
-        ext:   list[str]  = []
+        ext: list[str] = []
         m = re.match(r'import "([^"]+)"', import_str)
         if not m:
             return local, ext
@@ -892,7 +1113,7 @@ class DependencyGraph:
                 pass
 
         if module_prefix and pkg_path.startswith(module_prefix):
-            rel_pkg = pkg_path[len(module_prefix):].lstrip("/")
+            rel_pkg = pkg_path[len(module_prefix) :].lstrip("/")
             candidate_dir = self.workspace / rel_pkg
             if candidate_dir.is_dir():
                 for go_file in sorted(candidate_dir.glob("*.go")):
@@ -911,14 +1132,16 @@ class DependencyGraph:
         return local, ext
 
     def _resolve_rust_import(
-        self, import_str: str, from_file: Path,
+        self,
+        import_str: str,
+        from_file: Path,
     ) -> tuple[list[Path], list[str]]:
         local: list[Path] = []
-        ext:   list[str]  = []
+        ext: list[str] = []
         # `use crate::module::Type` → workspace-local
-        m = re.match(r'use\s+(?:crate|self|super)::(\S+)', import_str)
+        m = re.match(r"use\s+(?:crate|self|super)::(\S+)", import_str)
         if m:
-            parts = m.group(1).split("::")[0]   # first path segment
+            parts = m.group(1).split("::")[0]  # first path segment
             for candidate in (
                 from_file.parent / f"{parts}.rs",
                 from_file.parent / parts / "mod.rs",
@@ -928,20 +1151,22 @@ class DependencyGraph:
                     break
         else:
             # External crate
-            m2 = re.match(r'use\s+([\w]+)', import_str)
+            m2 = re.match(r"use\s+([\w]+)", import_str)
             if m2 and m2.group(1) not in ("std", "core", "alloc"):
                 ext.append(m2.group(1))
         return local, ext
 
     def _resolve_java_import(
-        self, import_str: str, from_file: Path,
+        self,
+        import_str: str,
+        from_file: Path,
     ) -> tuple[list[Path], list[str]]:
         local: list[Path] = []
-        ext:   list[str]  = []
-        m = re.match(r'import\s+([\w.]+);', import_str)
+        ext: list[str] = []
+        m = re.match(r"import\s+([\w.]+);", import_str)
         if not m:
             return local, ext
-        fqn     = m.group(1)
+        fqn = m.group(1)
         rel_path = fqn.replace(".", "/") + ".java"
         for candidate in self.workspace.rglob(Path(rel_path).name):
             if str(candidate).replace("\\", "/").endswith(rel_path.replace("\\", "/")):
@@ -964,7 +1189,7 @@ class DependencyGraph:
         Idempotent: returns the cached node if the file hasn't changed.
         """
         rpath = path.resolve()
-        key   = str(rpath)
+        key = str(rpath)
 
         with self._lock:
             existing = self._nodes.get(key)
@@ -974,10 +1199,10 @@ class DependencyGraph:
         idx = self._symbol_fetcher(rpath)
         lang = idx.language
 
-        dep_files:    list[Path] = []
-        ext_pkgs:     list[str]  = []
-        seen_local:   set[str]   = set()
-        seen_ext:     set[str]   = set()
+        dep_files: list[Path] = []
+        ext_pkgs: list[str] = []
+        seen_local: set[str] = set()
+        seen_ext: set[str] = set()
 
         for imp_str in idx.imports:
             if lang == "python":
@@ -1076,8 +1301,8 @@ class DependencyGraph:
         Returns a deduplicated list in BFS order.
         """
         visited: set[str] = set()
-        queue:   deque[tuple[Path, int]] = deque([(path.resolve(), 0)])
-        result:  list[Path] = []
+        queue: deque[tuple[Path, int]] = deque([(path.resolve(), 0)])
+        result: list[Path] = []
 
         while queue:
             current, depth = queue.popleft()
@@ -1085,7 +1310,7 @@ class DependencyGraph:
             if key in visited or depth > max_depth:
                 continue
             visited.add(key)
-            if depth > 0:   # skip the root itself
+            if depth > 0:  # skip the root itself
                 result.append(current)
             try:
                 node = self.build_file(current)
@@ -1100,8 +1325,8 @@ class DependencyGraph:
     def transitive_dependents(self, path: Path, max_depth: int = 4) -> list[Path]:
         """All files that (transitively) import *path*."""
         visited: set[str] = set()
-        queue:   deque[tuple[Path, int]] = deque([(path.resolve(), 0)])
-        result:  list[Path] = []
+        queue: deque[tuple[Path, int]] = deque([(path.resolve(), 0)])
+        result: list[Path] = []
 
         while queue:
             current, depth = queue.popleft()
@@ -1151,8 +1376,8 @@ class DependencyGraph:
             keys = list(self._nodes.keys())
 
         cycles: list[list[str]] = []
-        visited:    set[str] = set()
-        in_stack:   set[str] = set()
+        visited: set[str] = set()
+        in_stack: set[str] = set()
 
         def _dfs(key: str, stack: list[str]) -> None:
             if key in in_stack:
@@ -1262,6 +1487,7 @@ def get_dependency_graph(workspace: Path) -> DependencyGraph:
 
 # ── Backwards-compatible shim ────────────────────────────────────────────────
 
+
 def resolve_imports(path: Path, workspace: Path, max_depth: int = 2) -> list[Path]:
     """
     Backward-compatible shim over DependencyGraph.
@@ -1274,6 +1500,7 @@ def resolve_imports(path: Path, workspace: Path, max_depth: int = 2) -> list[Pat
 # ─────────────────────────────────────────────────────────────────────────────
 # Public: build_symbol_context
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def build_symbol_context(
     active_paths: list[Path],
@@ -1302,8 +1529,8 @@ def build_symbol_context(
                 all_paths.append(dep)
                 active_set.add(dep.resolve())
 
-    parts:  list[str] = []
-    total:  int       = 0
+    parts: list[str] = []
+    total: int = 0
 
     for fpath in all_paths:
         if total >= max_total_chars:
@@ -1326,8 +1553,11 @@ def build_symbol_context(
         body_lines: list[str] = []
 
         if include_imports and idx.imports:
-            body_lines.append("  # imports: " + ", ".join(idx.imports[:8])
-                               + (" ..." if len(idx.imports) > 8 else ""))
+            body_lines.append(
+                "  # imports: "
+                + ", ".join(idx.imports[:8])
+                + (" ..." if len(idx.imports) > 8 else "")
+            )
 
         shown = 0
         for sym in idx.symbols:
@@ -1353,14 +1583,16 @@ def build_symbol_context(
 # Symbol resolution — find_definition / find_references
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DefinitionSite:
     """A location where a symbol is defined."""
+
     file: Path
     line: int
     signature: str
-    kind: str           # "function"|"class"|"method"|"field"|"const"|"type"|"export"
-    via_reexport: bool = False   # found through __all__ re-export chain
+    kind: str  # "function"|"class"|"method"|"field"|"const"|"type"|"export"
+    via_reexport: bool = False  # found through __all__ re-export chain
 
     def render(self, workspace: Optional[Path] = None) -> str:
         try:
@@ -1375,11 +1607,12 @@ class DefinitionSite:
 @dataclass
 class ReferenceSite:
     """A location where a symbol is referenced (used)."""
+
     file: Path
     line: int
     col: int
-    context: str        # the full source line
-    ref_kind: str       # "call"|"import"|"assign"|"type_hint"|"definition"|"unknown"
+    context: str  # the full source line
+    ref_kind: str  # "call"|"import"|"assign"|"type_hint"|"definition"|"unknown"
 
     def render(self, workspace: Optional[Path] = None) -> str:
         try:
@@ -1395,32 +1628,34 @@ class ReferenceSite:
 
 # ── Reference classifier ──────────────────────────────────────────────────────
 
+
 def _classify_reference(line_text: str, name: str, col: int) -> str:
     """
     Classify a reference to *name* appearing at column *col* in *line_text*.
     Returns one of: "definition", "call", "import", "assign", "type_hint", "unknown"
     """
     # Definition: def name / class name
-    if re.match(r'^\s*(?:async\s+)?def\s+' + re.escape(name) + r'\s*[\(:]', line_text) or \
-       re.match(r'^\s*class\s+' + re.escape(name) + r'\s*[:(]', line_text):
+    if re.match(r"^\s*(?:async\s+)?def\s+" + re.escape(name) + r"\s*[\(:]", line_text) or re.match(
+        r"^\s*class\s+" + re.escape(name) + r"\s*[:(]", line_text
+    ):
         return "definition"
 
     # Import statement
-    if re.search(r'\bimport\b.*\b' + re.escape(name) + r'\b', line_text):
+    if re.search(r"\bimport\b.*\b" + re.escape(name) + r"\b", line_text):
         return "import"
 
     # What immediately follows the name at its position
-    after = line_text[col + len(name):].lstrip()
+    after = line_text[col + len(name) :].lstrip()
     if after.startswith("("):
         return "call"
 
     # Assignment target: `name =` / `name +=` etc.
-    if re.match(r'^\s*' + re.escape(name) + r'\s*[+\-*/|&^]?=', line_text):
+    if re.match(r"^\s*" + re.escape(name) + r"\s*[+\-*/|&^]?=", line_text):
         return "assign"
 
     # Type hint context: `: name` / `-> name` / `[name` / `name,` inside annotation
     before = line_text[:col]
-    if re.search(r'(?::\s*|->\s*|[\[|,\s]\s*)$', before):
+    if re.search(r"(?::\s*|->\s*|[\[|,\s]\s*)$", before):
         return "type_hint"
 
     return "unknown"
@@ -1429,14 +1664,36 @@ def _classify_reference(line_text: str, name: str, col: int) -> str:
 # ── Workspace file iterator ──────────────────────────────────────────────────
 
 _SOURCE_EXTS = {
-    ".py", ".pyi", ".ts", ".tsx", ".js", ".jsx",
-    ".go", ".rs", ".java", ".cs", ".c", ".cpp", ".h", ".hpp",
+    ".py",
+    ".pyi",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".cs",
+    ".c",
+    ".cpp",
+    ".h",
+    ".hpp",
 }
 
 _IGNORE_DIRS = {
-    "__pycache__", ".venv", "venv", "node_modules",
-    ".git", "build", "dist", ".tox", ".mypy_cache",
-    ".pytest_cache", "target", ".next", "out",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "node_modules",
+    ".git",
+    "build",
+    "dist",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "target",
+    ".next",
+    "out",
 }
 
 
@@ -1465,6 +1722,7 @@ def _iter_workspace_files(workspace: Path) -> Iterator[Path]:
 
 # ── __all__ re-export resolver ───────────────────────────────────────────────
 
+
 def _resolve_reexports(init_path: Path, workspace: Path) -> dict[str, Path]:
     """
     Parse an __init__.py and return a map: exported_name → source_file.
@@ -1479,7 +1737,7 @@ def _resolve_reexports(init_path: Path, workspace: Path) -> dict[str, Path]:
 
     try:
         source = init_path.read_text(encoding="utf-8", errors="replace")
-        tree   = ast.parse(source, filename=str(init_path))
+        tree = ast.parse(source, filename=str(init_path))
     except Exception:
         return reexports
 
@@ -1550,7 +1808,7 @@ def _resolve_reexports(init_path: Path, workspace: Path) -> dict[str, Path]:
                     None,
                 )
                 if all_sym:
-                    for m in re.finditer(r"['\"]([\w]+)['\"]" , all_sym.signature):
+                    for m in re.finditer(r"['\"]([\w]+)['\"]", all_sym.signature):
                         en = m.group(1)
                         if all_names is None or en in all_names:
                             reexports[en] = submod_path
@@ -1562,6 +1820,7 @@ def _resolve_reexports(init_path: Path, workspace: Path) -> dict[str, Path]:
 
 
 # ── Public: find_definition ───────────────────────────────────────────────────
+
 
 def find_definition(
     name: str,
@@ -1587,6 +1846,7 @@ def find_definition(
     # dependency: index.py → symbols.py → index.py.
     try:
         from nvagent.core.index import get_workspace_index as _get_idx
+
         _sym_fetcher = _get_idx(workspace).symbols_for
     except Exception:
         _sym_fetcher = extract_symbols  # fallback: parse directly
@@ -1606,13 +1866,15 @@ def find_definition(
             if key in seen:
                 continue
             seen.add(key)
-            results.append(DefinitionSite(
-                file=rpath,
-                line=sym.line,
-                signature=sym.signature.strip(),
-                kind=sym.kind,
-                via_reexport=via_reexport,
-            ))
+            results.append(
+                DefinitionSite(
+                    file=rpath,
+                    line=sym.line,
+                    signature=sym.signature.strip(),
+                    kind=sym.kind,
+                    via_reexport=via_reexport,
+                )
+            )
 
     # Pass 1: hint paths (active files)
     hint_set: set[str] = set()
@@ -1646,6 +1908,7 @@ def find_definition(
 
 # ── Public: find_references ───────────────────────────────────────────────────
 
+
 def find_references(
     name: str,
     workspace: Path,
@@ -1664,7 +1927,7 @@ def find_references(
     all before doing the more expensive decode + regex line scan.
     """
     results: list[ReferenceSite] = []
-    pattern = re.compile(r'\b' + re.escape(name) + r'\b')
+    pattern = re.compile(r"\b" + re.escape(name) + r"\b")
     name_bytes = name.encode()
 
     hint_set: set[str] = set()
@@ -1706,12 +1969,14 @@ def find_references(
             ref_kind = _classify_reference(line_text, name, col)
             if not include_definitions and ref_kind == "definition":
                 continue
-            results.append(ReferenceSite(
-                file=rpath,
-                line=lineno,
-                col=col,
-                context=line_text,
-                ref_kind=ref_kind,
-            ))
+            results.append(
+                ReferenceSite(
+                    file=rpath,
+                    line=lineno,
+                    col=col,
+                    context=line_text,
+                    ref_kind=ref_kind,
+                )
+            )
 
     return results

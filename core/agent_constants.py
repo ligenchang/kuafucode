@@ -2,6 +2,7 @@
 
 Kept in one place so they can be tuned without hunting through large files.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,29 +21,85 @@ logger = logging.getLogger(__name__)
 
 #: Task messages that start with any of these words/phrases skip the planning
 #: phase (plan decomposition is waste for greetings, read-only questions, etc.)
-SKIP_PLAN_WORDS: frozenset[str] = frozenset({
-    "hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
-    "sure", "yes", "no", "bye", "goodbye",
-    "what is", "what's", "what are", "what does", "what do",
-    "who are", "who is", "how are", "how does", "how do",
-    "why is", "why does", "when did", "where is",
-    "help", "explain", "describe", "show", "list", "check",
-    "analyze", "analyse", "review", "find", "search", "look",
-    "summarize", "summarise", "tell me", "show me", "give me",
-    "print", "display", "read", "open", "view", "inspect",
-    "diagnose", "trace", "debug", "profile", "investigate",
-})
+SKIP_PLAN_WORDS: frozenset[str] = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+        "sure",
+        "yes",
+        "no",
+        "bye",
+        "goodbye",
+        "what is",
+        "what's",
+        "what are",
+        "what does",
+        "what do",
+        "who are",
+        "who is",
+        "how are",
+        "how does",
+        "how do",
+        "why is",
+        "why does",
+        "when did",
+        "where is",
+        "help",
+        "explain",
+        "describe",
+        "show",
+        "list",
+        "check",
+        "analyze",
+        "analyse",
+        "review",
+        "find",
+        "search",
+        "look",
+        "summarize",
+        "summarise",
+        "tell me",
+        "show me",
+        "give me",
+        "print",
+        "display",
+        "read",
+        "open",
+        "view",
+        "inspect",
+        "diagnose",
+        "trace",
+        "debug",
+        "profile",
+        "investigate",
+    }
+)
 
 #: Phrases that indicate the model is talking about work instead of doing it.
 PREMATURE_STOP_PHRASES: tuple[str, ...] = (
-    "i'll", "i will", "let me", "next i", "now i", "i need to",
-    "continuing", "i'll continue", "i should", "i'll now", "let's",
+    "i'll",
+    "i will",
+    "let me",
+    "next i",
+    "now i",
+    "i need to",
+    "continuing",
+    "i'll continue",
+    "i should",
+    "i'll now",
+    "let's",
 )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Session JSONL logging
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 def make_session_logger(log_path: Path):
     """Return a callable that appends a JSONL entry to *log_path*."""
@@ -67,6 +124,7 @@ def make_session_logger(log_path: Path):
 # Performance timing helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 def write_perf_log(workspace: Path, label: str, perf: dict) -> None:
     """Append a one-line perf record to ``<workspace>/.nvagent/perf.log``."""
     import datetime as _dt
@@ -79,16 +137,12 @@ def write_perf_log(workspace: Path, label: str, perf: dict) -> None:
         for k, v in perf.items():
             if isinstance(v, float):
                 suffix = "ch" if "_chars_" in k else "s"
-                parts.append(
-                    f"{k}={v:.0f}{suffix}" if suffix == "ch" else f"{k}={v:.2f}{suffix}"
-                )
+                parts.append(f"{k}={v:.0f}{suffix}" if suffix == "ch" else f"{k}={v:.2f}{suffix}")
             else:
                 parts.append(f"{k}={v}")
         line = (
             f"{_dt.datetime.now().strftime('%H:%M:%S')} "
-            f"msg={label!r}  "
-            + "  ".join(parts)
-            + "\n"
+            f"msg={label!r}  " + "  ".join(parts) + "\n"
         )
         with open(log_dir / "perf.log", "a", encoding="utf-8") as _f:
             _f.write(line)

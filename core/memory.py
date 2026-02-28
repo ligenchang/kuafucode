@@ -38,25 +38,25 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
-
 _MEMORY_VERSION = 2
-_MAX_ENTRIES    = 500    # cap total long-term entries
-_MAX_FILE_NOTES = 300    # cap file-level notes
-_MAX_TASK_HIST  = 50     # cap task history entries
+_MAX_ENTRIES = 500  # cap total long-term entries
+_MAX_FILE_NOTES = 300  # cap file-level notes
+_MAX_TASK_HIST = 50  # cap task history entries
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Data classes
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class MemoryEntry:
-    key:        str           # SHA-1 of content  (dedup key)
-    content:    str
-    tags:       list[str]
-    file:       Optional[str] # workspace-relative path this fact belongs to, or None
-    created_at: float         # epoch seconds
-    accessed_at: float        # last recalled
+    key: str  # SHA-1 of content  (dedup key)
+    content: str
+    tags: list[str]
+    file: Optional[str]  # workspace-relative path this fact belongs to, or None
+    created_at: float  # epoch seconds
+    accessed_at: float  # last recalled
     access_count: int = 0
 
     def age_days(self) -> float:
@@ -66,17 +66,19 @@ class MemoryEntry:
 @dataclass
 class FileNote:
     """Structured notes attached to a specific file path."""
-    path:       str           # workspace-relative path
-    summary:    str           # one-line summary of what this file does
-    notes:      list[str]     # arbitrary notes (e.g. "handles JWT tokens")
+
+    path: str  # workspace-relative path
+    summary: str  # one-line summary of what this file does
+    notes: list[str]  # arbitrary notes (e.g. "handles JWT tokens")
     updated_at: float
 
 
 @dataclass
 class TaskRecord:
     """Brief record of a completed agent task."""
-    summary:    str
-    files:      list[str]     # files changed
+
+    summary: str
+    files: list[str]  # files changed
     created_at: float
 
 
@@ -101,7 +103,7 @@ def _score_entry(entry: MemoryEntry, query_tokens: set[str]) -> float:
         return 0.0
     entry_tokens = set(_tokenize(entry.content + " " + " ".join(entry.tags)))
     overlap = len(query_tokens & entry_tokens) / max(len(query_tokens), 1)
-    recency  = max(0.0, 1.0 - entry.age_days() / 30)   # decay over 30 days
+    recency = max(0.0, 1.0 - entry.age_days() / 30)  # decay over 30 days
     freq_boost = min(entry.access_count / 10, 0.3)
     return overlap + recency * 0.2 + freq_boost
 
@@ -109,6 +111,7 @@ def _score_entry(entry: MemoryEntry, query_tokens: set[str]) -> float:
 # ─────────────────────────────────────────────────────────────────────────────
 # Memory  (the main class)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class Memory:
     """
@@ -120,12 +123,12 @@ class Memory:
     MEMORY_FILE = ".nvagent/memory.json"
 
     def __init__(self, workspace: Path) -> None:
-        self.workspace   = workspace.resolve()
-        self._entries:   dict[str, MemoryEntry] = {}     # key → entry
-        self._file_notes: dict[str, FileNote]  = {}      # rel_path → note
-        self._task_hist: list[TaskRecord]       = []
-        self._lock       = threading.Lock()
-        self._dirty      = False
+        self.workspace = workspace.resolve()
+        self._entries: dict[str, MemoryEntry] = {}  # key → entry
+        self._file_notes: dict[str, FileNote] = {}  # rel_path → note
+        self._task_hist: list[TaskRecord] = []
+        self._lock = threading.Lock()
+        self._dirty = False
 
     # ── Core operations ───────────────────────────────────────────────────────
 
@@ -149,20 +152,20 @@ class Memory:
             if key in self._entries:
                 # Update tags and bump access
                 existing = self._entries[key]
-                for t in (tags or []):
+                for t in tags or []:
                     if t not in existing.tags:
                         existing.tags.append(t)
                 existing.accessed_at = time.time()
                 existing.access_count += 1
             else:
                 self._entries[key] = MemoryEntry(
-                    key          = key,
-                    content      = content,
-                    tags         = list(tags or []),
-                    file         = file,
-                    created_at   = time.time(),
-                    accessed_at  = time.time(),
-                    access_count = 0,
+                    key=key,
+                    content=content,
+                    tags=list(tags or []),
+                    file=file,
+                    created_at=time.time(),
+                    accessed_at=time.time(),
+                    access_count=0,
                 )
                 # Evict oldest entries if over cap
                 if len(self._entries) > _MAX_ENTRIES:
@@ -192,10 +195,7 @@ class Memory:
             tag_set = set(tags)
             candidates = [e for e in candidates if any(t in tag_set for t in e.tags)]
 
-        scored = [
-            (e, _score_entry(e, query_tokens))
-            for e in candidates
-        ]
+        scored = [(e, _score_entry(e, query_tokens)) for e in candidates]
         # Use heapq.nlargest to find top-k without sorting all entries (O(n log k) vs O(n log n))
         top = heapq.nlargest(max_k, scored, key=lambda x: x[1])
 
@@ -248,9 +248,7 @@ class Memory:
         with self._lock:
             existing = self._file_notes.get(path)
             if existing is None:
-                existing = FileNote(
-                    path=path, summary="", notes=[], updated_at=time.time()
-                )
+                existing = FileNote(path=path, summary="", notes=[], updated_at=time.time())
                 self._file_notes[path] = existing
 
             if summary:
@@ -287,11 +285,13 @@ class Memory:
     def task_done(self, summary: str, files: Optional[list[str]] = None) -> None:
         """Record a completed agent task (auto-evicts oldest if over cap)."""
         with self._lock:
-            self._task_hist.append(TaskRecord(
-                summary    = summary.strip()[:400],
-                files      = [str(f) for f in (files or [])],
-                created_at = time.time(),
-            ))
+            self._task_hist.append(
+                TaskRecord(
+                    summary=summary.strip()[:400],
+                    files=[str(f) for f in (files or [])],
+                    created_at=time.time(),
+                )
+            )
             if len(self._task_hist) > _MAX_TASK_HIST:
                 self._task_hist = self._task_hist[-_MAX_TASK_HIST:]
             self._dirty = True
@@ -334,9 +334,9 @@ class Memory:
 
         # ── File notes for active paths ───────────────────────────────────
         with self._lock:
-            fn_items = sorted(
-                self._file_notes.values(), key=lambda n: n.updated_at, reverse=True
-            )[:max_file_notes]
+            fn_items = sorted(self._file_notes.values(), key=lambda n: n.updated_at, reverse=True)[
+                :max_file_notes
+            ]
 
         if fn_items:
             note_lines = []
@@ -355,8 +355,11 @@ class Memory:
         if recent:
             task_lines = []
             for t in reversed(recent):
-                when = f" ({int((time.time() - t.created_at) / 3600)}h ago)" \
-                    if time.time() - t.created_at < 86400 else ""
+                when = (
+                    f" ({int((time.time() - t.created_at) / 3600)}h ago)"
+                    if time.time() - t.created_at < 86400
+                    else ""
+                )
                 f_str = f"  [{', '.join(t.files[:3])}]" if t.files else ""
                 task_lines.append(f"• {t.summary[:120]}{when}{f_str}")
             block = "### Recent tasks\n" + "\n".join(task_lines)
@@ -394,29 +397,29 @@ class Memory:
                 "saved_at": time.time(),
                 "entries": {
                     k: {
-                        "key":          e.key,
-                        "content":      e.content,
-                        "tags":         e.tags,
-                        "file":         e.file,
-                        "created_at":   e.created_at,
-                        "accessed_at":  e.accessed_at,
+                        "key": e.key,
+                        "content": e.content,
+                        "tags": e.tags,
+                        "file": e.file,
+                        "created_at": e.created_at,
+                        "accessed_at": e.accessed_at,
                         "access_count": e.access_count,
                     }
                     for k, e in self._entries.items()
                 },
                 "file_notes": {
                     k: {
-                        "path":       fn.path,
-                        "summary":    fn.summary,
-                        "notes":      fn.notes,
+                        "path": fn.path,
+                        "summary": fn.summary,
+                        "notes": fn.notes,
                         "updated_at": fn.updated_at,
                     }
                     for k, fn in self._file_notes.items()
                 },
                 "task_history": [
                     {
-                        "summary":    t.summary,
-                        "files":      t.files,
+                        "summary": t.summary,
+                        "files": t.files,
                         "created_at": t.created_at,
                     }
                     for t in self._task_hist
@@ -445,29 +448,31 @@ class Memory:
         with self._lock:
             for k, e in raw.get("entries", {}).items():
                 self._entries[k] = MemoryEntry(
-                    key          = e["key"],
-                    content      = e["content"],
-                    tags         = e.get("tags", []),
-                    file         = e.get("file"),
-                    created_at   = e.get("created_at", time.time()),
-                    accessed_at  = e.get("accessed_at", time.time()),
-                    access_count = e.get("access_count", 0),
+                    key=e["key"],
+                    content=e["content"],
+                    tags=e.get("tags", []),
+                    file=e.get("file"),
+                    created_at=e.get("created_at", time.time()),
+                    accessed_at=e.get("accessed_at", time.time()),
+                    access_count=e.get("access_count", 0),
                 )
 
             for k, fn in raw.get("file_notes", {}).items():
                 self._file_notes[k] = FileNote(
-                    path       = fn["path"],
-                    summary    = fn.get("summary", ""),
-                    notes      = fn.get("notes", []),
-                    updated_at = fn.get("updated_at", time.time()),
+                    path=fn["path"],
+                    summary=fn.get("summary", ""),
+                    notes=fn.get("notes", []),
+                    updated_at=fn.get("updated_at", time.time()),
                 )
 
             for t in raw.get("task_history", []):
-                self._task_hist.append(TaskRecord(
-                    summary    = t["summary"],
-                    files      = t.get("files", []),
-                    created_at = t.get("created_at", time.time()),
-                ))
+                self._task_hist.append(
+                    TaskRecord(
+                        summary=t["summary"],
+                        files=t.get("files", []),
+                        created_at=t.get("created_at", time.time()),
+                    )
+                )
 
         return len(self._entries)
 
@@ -489,7 +494,7 @@ class Memory:
 # Singleton
 # ─────────────────────────────────────────────────────────────────────────────
 
-_MEMORIES:     dict[str, Memory] = {}
+_MEMORIES: dict[str, Memory] = {}
 _MEMORIES_LOCK = threading.Lock()
 
 

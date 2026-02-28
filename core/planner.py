@@ -36,20 +36,21 @@ if TYPE_CHECKING:
 # Data model
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class StepStatus(str, Enum):
-    PENDING  = "pending"
-    ACTIVE   = "active"
-    DONE     = "done"
-    FAILED   = "failed"
-    SKIPPED  = "skipped"
+    PENDING = "pending"
+    ACTIVE = "active"
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 _STATUS_ICON: dict[StepStatus, str] = {
-    StepStatus.PENDING:  "○",
-    StepStatus.ACTIVE:   "◉",
-    StepStatus.DONE:     "✓",
-    StepStatus.FAILED:   "✗",
-    StepStatus.SKIPPED:  "⊘",
+    StepStatus.PENDING: "○",
+    StepStatus.ACTIVE: "◉",
+    StepStatus.DONE: "✓",
+    StepStatus.FAILED: "✗",
+    StepStatus.SKIPPED: "⊘",
 }
 
 
@@ -58,7 +59,7 @@ class PlanStep:
     id: int
     title: str
     description: str = ""
-    tool_hint: Optional[str] = None   # suggested tool name from TOOL_SCHEMAS
+    tool_hint: Optional[str] = None  # suggested tool name from TOOL_SCHEMAS
     status: StepStatus = StepStatus.PENDING
 
     def to_dict(self) -> dict:
@@ -88,9 +89,7 @@ class Plan:
 
     @property
     def done(self) -> bool:
-        return all(
-            s.status in (StepStatus.DONE, StepStatus.SKIPPED) for s in self.steps
-        )
+        return all(s.status in (StepStatus.DONE, StepStatus.SKIPPED) for s in self.steps)
 
     @property
     def completed_steps(self) -> list[PlanStep]:
@@ -190,7 +189,7 @@ class Plan:
 
     def progress_summary(self) -> str:
         """One-line progress string, e.g. '3/6 steps done'."""
-        done  = sum(1 for s in self.steps if s.status == StepStatus.DONE)
+        done = sum(1 for s in self.steps if s.status == StepStatus.DONE)
         total = len(self.steps)
         return f"{done}/{total} steps done"
 
@@ -240,6 +239,7 @@ Respond in plain text — no JSON, no markdown fences.
 # Planner
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class Planner:
     """
     Generates task plans and reflection notes via LLM.
@@ -270,7 +270,7 @@ class Planner:
 
         messages = [
             {"role": "system", "content": _DECOMPOSE_SYSTEM},
-            {"role": "user",   "content": user_content},
+            {"role": "user", "content": user_content},
         ]
 
         raw = await self._collect(messages)
@@ -289,9 +289,7 @@ class Planner:
         """
         completed_so_far = ""
         if completed_step_titles:
-            completed_so_far = "\n".join(
-                f"  ✓ {t}" for t in completed_step_titles
-            )
+            completed_so_far = "\n".join(f"  ✓ {t}" for t in completed_step_titles)
 
         user_content = (
             f"Overall task: {task}\n"
@@ -303,7 +301,7 @@ class Planner:
 
         messages = [
             {"role": "system", "content": _REFLECT_SYSTEM},
-            {"role": "user",   "content": user_content},
+            {"role": "user", "content": user_content},
         ]
 
         reflection = await self._collect(messages)
