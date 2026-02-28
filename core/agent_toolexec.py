@@ -37,6 +37,40 @@ _WRITE_TOOLS: frozenset[str] = frozenset({
 _RUN_TOOLS: frozenset[str] = frozenset({"run_command", "run_tests", "run_formatter"})
 _PROGRESS_TOOLS = _WRITE_TOOLS | _RUN_TOOLS
 
+# Common hallucinated names → correct equivalents (populated from training data bleed)
+_TOOL_ALIASES: dict[str, str] = {
+    "execute_bash": "run_command",
+    "bash": "run_command",
+    "shell": "run_command",
+    "run_bash": "run_command",
+    "execute_command": "run_command",
+    "computer": "run_command",
+    "str_replace": "str_replace_editor",
+    "create_file": "write_file",
+    "write_files": "write_file",
+    "read_files": "read_file",
+    "view_file": "read_file",
+    "cat_file": "read_file",
+    "list_files": "list_directory",
+    "ls": "list_directory",
+}
+
+
+def _closest_tool(name: str, schemas_by_name: dict) -> str:
+    """Return the most likely correct tool name for a hallucinated *name*.
+
+    Checks the hard-coded alias table first, then falls back to a simple
+    substring/prefix match against available tool names.
+    """
+    if name in _TOOL_ALIASES and _TOOL_ALIASES[name] in schemas_by_name:
+        return _TOOL_ALIASES[name]
+    name_lower = name.lower().replace("_", "").replace("-", "")
+    for available in schemas_by_name:
+        av_lower = available.lower().replace("_", "")
+        if name_lower in av_lower or av_lower in name_lower:
+            return available
+    return ""
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Result container
@@ -140,10 +174,12 @@ class ToolBatchExecutor:
             for _tc in tool_calls_data:
                 _n, _a = _tc["name"], _tc["args"]
                 _s = schemas_by_name.get(_n)
-                if _s:
-                    _req = _s["function"].get("parameters", {}).get("required", [])
-                    if any(r not in _a or _a[r] is None or _a[r] == "" for r in _req):
-                        continue
+                # Skip unknown tools — they get an error message in the main loop
+                if not _s:
+                    continue
+                _req = _s["function"].get("parameters", {}).get("required", [])
+                if any(r not in _a or _a[r] is None or _a[r] == "" for r in _req):
+                    continue
                 _exec_tasks[_tc["id"]] = asyncio.create_task(
                     agent.tools.execute(_n, _a)
                 )
@@ -161,58 +197,95 @@ class ToolBatchExecutor:
             name = tc["name"]
             args = tc["args"]
 
-            # Validate required args
+            # Reject calls to tools not in the active schema
             schema = schemas_by_name.get(name)
-            if schema:
-                required = schema["function"].get("parameters", {}).get("required", [])
-                missing = [
-                    r for r in required
-                    if r not in args or args[r] is None or args[r] == ""
-                ]
-                if missing:
-                    err_msg = (
-                        f"Missing required argument(s) for {name}: {', '.join(missing)}"
+            if schema is None:
+                _suggestion = _closest_tool(name, schemas_by_name)
+                _suggest_str = (
+                    f" Did you mean `{_suggestion}`?" if _suggestion else ""
+                )
+                _available = ", ".join(sorted(schemas_by_name)[:20])
+                _err_msg = (
+                    f"Unknown tool '{name}'. This tool is not available."
+                    f"{_suggest_str}\n"
+                    f"Available tools (first 20): {_available}\n"
+                    "Use only the tools listed above."
+                )
+                yield AgentEvent(type="tool_start", data={"name": name, "args": args})
+                yield AgentEvent(
+                    type="tool_result",
+                    data={"name": name, "result": f"Error: {_err_msg}"},
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": f"Error: {_err_msg}",
+                })
+                # Inject a one-shot system correction so the model stops retrying
+                _correction = (
+                    f"[System] You called the non-existent tool `{name}`."
+                    f"{_suggest_str}\n"
+                    "Only call tools from the provided schema. "
+                    "Do not invent tool names."
+                )
+                messages.append({"role": "user", "content": _correction})
+                agent.session.messages.append({"role": "user", "content": _correction})
+                yield AgentEvent(
+                    type="status",
+                    data=f"[unknown-tool] '{name}' not in schema — corrective hint injected",
+                )
+                continue
+
+            # schema is guaranteed non-None here
+            required = schema["function"].get("parameters", {}).get("required", [])
+            missing = [
+                r for r in required
+                if r not in args or args[r] is None or args[r] == ""
+            ]
+            if missing:
+                err_msg = (
+                    f"Missing required argument(s) for {name}: {', '.join(missing)}"
+                )
+                yield AgentEvent(type="tool_start", data={"name": name, "args": args})
+                yield AgentEvent(
+                    type="tool_result",
+                    data={"name": name, "result": f"Error: {err_msg}"},
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": f"Error: {err_msg}",
+                })
+                if agent.config.safety.loop_detection:
+                    agent.loop_detector.record(name, args)
+                agent._missing_arg_streak[name] = (
+                    agent._missing_arg_streak.get(name, 0) + 1
+                )
+                if agent._missing_arg_streak[name] >= 3:
+                    _hint = (
+                        f"[Error — tool call stuck] You have called '{name}' "
+                        f"{agent._missing_arg_streak[name]} consecutive times with "
+                        f"missing required argument(s): {', '.join(missing)}.\n"
+                        f"Required fields: {', '.join(required)}.\n"
+                        "You MUST provide ALL required arguments with concrete, "
+                        "non-empty values. If you do not yet know a required value, "
+                        "state that explicitly instead of calling the tool with "
+                        "placeholder or empty arguments."
                     )
-                    yield AgentEvent(type="tool_start", data={"name": name, "args": args})
+                    messages.append({"role": "user", "content": _hint})
+                    agent.session.messages.append(
+                        {"role": "user", "content": _hint}
+                    )
                     yield AgentEvent(
-                        type="tool_result",
-                        data={"name": name, "result": f"Error: {err_msg}"},
+                        type="status",
+                        data=(
+                            f"[stuck] '{name}' called "
+                            f"{agent._missing_arg_streak[name]}x "
+                            "with missing args — hint injected"
+                        ),
                     )
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc["id"],
-                        "content": f"Error: {err_msg}",
-                    })
-                    if agent.config.safety.loop_detection:
-                        agent.loop_detector.record(name, args)
-                    agent._missing_arg_streak[name] = (
-                        agent._missing_arg_streak.get(name, 0) + 1
-                    )
-                    if agent._missing_arg_streak[name] >= 3:
-                        _hint = (
-                            f"[Error — tool call stuck] You have called '{name}' "
-                            f"{agent._missing_arg_streak[name]} consecutive times with "
-                            f"missing required argument(s): {', '.join(missing)}.\n"
-                            f"Required fields: {', '.join(required)}.\n"
-                            "You MUST provide ALL required arguments with concrete, "
-                            "non-empty values. If you do not yet know a required value, "
-                            "state that explicitly instead of calling the tool with "
-                            "placeholder or empty arguments."
-                        )
-                        messages.append({"role": "user", "content": _hint})
-                        agent.session.messages.append(
-                            {"role": "user", "content": _hint}
-                        )
-                        yield AgentEvent(
-                            type="status",
-                            data=(
-                                f"[stuck] '{name}' called "
-                                f"{agent._missing_arg_streak[name]}x "
-                                "with missing args — hint injected"
-                            ),
-                        )
-                        agent._missing_arg_streak[name] = 0
-                    continue
+                    agent._missing_arg_streak[name] = 0
+                continue
 
             yield AgentEvent(type="tool_start", data={"name": name, "args": args})
             self._log_event(
