@@ -408,7 +408,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
         self.session = self.store.create_session(str(self.workspace))
 
     def _make_agent(self):
-        from nvagent.core.loop import Agent
+        from nvagent.core.agent import Agent
 
         return Agent(
             config=self.config,
@@ -420,7 +420,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
     async def test_agent_collects_events(self):
         """Agent should emit events including token and done."""
         from nvagent.core.client import StreamEvent
-        from nvagent.core.loop import Agent
+        from nvagent.core.agent import Agent
 
         call_count = [0]
 
@@ -447,7 +447,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
     async def test_agent_handles_tool_call(self):
         """Agent should execute tool calls and continue."""
         from nvagent.core.client import StreamEvent
-        from nvagent.core.loop import Agent
+        from nvagent.core.agent import Agent
 
         call_count = [0]
 
@@ -488,7 +488,7 @@ class TestAgentLoop(unittest.IsolatedAsyncioTestCase):
     async def test_agent_cancellation(self):
         """Agent should stop cleanly when cancelled."""
         from nvagent.core.client import StreamEvent
-        from nvagent.core.loop import Agent
+        from nvagent.core.agent import Agent
         import asyncio
 
         async def slow_stream(*args, **kwargs):
