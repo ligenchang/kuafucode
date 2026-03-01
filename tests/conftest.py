@@ -1,6 +1,5 @@
 """Shared pytest fixtures for nvagent tests."""
 
-import tempfile
 from pathlib import Path
 
 try:
@@ -12,6 +11,7 @@ except ImportError:
     pytest = None
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # /home/claude -> nvagent symlink
 
 

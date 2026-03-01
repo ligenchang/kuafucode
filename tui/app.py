@@ -23,10 +23,11 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 # ── Guard: fall back if textual not installed ──────────────────────────────────
 try:
+    from rich.syntax import Syntax
+    from rich.text import Text
     from textual import on, work
     from textual.app import App, ComposeResult
     from textual.binding import Binding
@@ -42,8 +43,6 @@ try:
         RichLog,
         Static,
     )
-    from rich.syntax import Syntax
-    from rich.text import Text
     _TEXTUAL_AVAILABLE = True
 except ImportError:
     _TEXTUAL_AVAILABLE = False

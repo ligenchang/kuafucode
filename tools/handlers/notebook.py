@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Optional
 
 from nvagent.tools.handlers import BaseHandler
 
@@ -20,7 +19,7 @@ class NotebookHandler(BaseHandler):
     async def read_notebook(
         self,
         path: str,
-        cell_index: Optional[int] = None,
+        cell_index: int | None = None,
     ) -> str:
         fpath = self.ctx._resolve_path(path)
         ok, reason = self.ctx.sandbox.validate_path(fpath)
@@ -116,7 +115,7 @@ class NotebookHandler(BaseHandler):
                 out_hint = f"  → {len(outputs)} output(s)"
                 if any(o.get("output_type") == "error" for o in outputs):
                     out_hint += " ⚠ error"
-            lines.append(f"{i:>3}  {ctype:<8}  {str(exec_count):>5}  {preview}{out_hint}")
+            lines.append(f"{i:>3}  {ctype:<8}  {exec_count!s:>5}  {preview}{out_hint}")
         return "\n".join(lines)
 
     # ── edit_notebook ─────────────────────────────────────────────────────────
@@ -125,8 +124,8 @@ class NotebookHandler(BaseHandler):
         self,
         path: str,
         operation: str,
-        cell_index: Optional[int] = None,
-        source: Optional[str] = None,
+        cell_index: int | None = None,
+        source: str | None = None,
         cell_type: str = "code",
     ) -> str:
         fpath = self.ctx._resolve_path(path)

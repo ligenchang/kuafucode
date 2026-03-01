@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import subprocess
 import time
 from collections import Counter, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from nvagent.config import SafetyConfig
 
@@ -38,17 +36,17 @@ class GitCheckpointer:
 
     def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
-        self._checkpoint_ref: Optional[str] = None
+        self._checkpoint_ref: str | None = None
 
     def is_git_repo(self) -> bool:
         _, _, rc = _git(["rev-parse", "--git-dir"], self.workspace)
         return rc == 0
 
-    def current_sha(self) -> Optional[str]:
+    def current_sha(self) -> str | None:
         out, _, rc = _git(["rev-parse", "HEAD"], self.workspace)
         return out if rc == 0 else None
 
-    async def checkpoint(self, message: str = "nvagent: pre-task checkpoint") -> Optional[str]:
+    async def checkpoint(self, message: str = "nvagent: pre-task checkpoint") -> str | None:
         if not self.is_git_repo():
             return None
         dirty_out, _, _ = _git(["status", "--short"], self.workspace)
@@ -62,7 +60,7 @@ class GitCheckpointer:
         self._checkpoint_ref = sha
         return sha
 
-    async def restore(self, ref: Optional[str] = None) -> tuple[bool, str]:
+    async def restore(self, ref: str | None = None) -> tuple[bool, str]:
         if not self.is_git_repo():
             return False, "Not a git repository."
         target = ref or self._checkpoint_ref
@@ -138,7 +136,7 @@ class ResourceGuard:
         self._tool_calls += tool_calls
         self._files_changed = files_changed
 
-    def check(self) -> Optional[Violation]:
+    def check(self) -> Violation | None:
         elapsed = time.monotonic() - self._start
         cfg = self._cfg
         if elapsed >= cfg.max_wall_seconds:

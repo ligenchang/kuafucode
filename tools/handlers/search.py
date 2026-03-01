@@ -10,7 +10,6 @@ import fnmatch
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 # Symbol index removed — using grep-based search fallbacks
 from nvagent.tools.handlers import BaseHandler
@@ -24,8 +23,8 @@ class SearchHandler(BaseHandler):
     async def search_code(
         self,
         query: str,
-        path: Optional[str] = None,
-        file_pattern: Optional[str] = None,
+        path: str | None = None,
+        file_pattern: str | None = None,
         regex: bool = False,
         case_sensitive: bool = False,
     ) -> str:
@@ -63,7 +62,7 @@ class SearchHandler(BaseHandler):
             lines = output.splitlines()
             if len(lines) > 100:
                 lines = lines[:100]
-                output = "\n".join(lines) + f"\n... (showing first 100 of more results)"
+                output = "\n".join(lines) + "\n... (showing first 100 of more results)"
             return output
         except Exception:
             return await self._search_python(
@@ -134,7 +133,7 @@ class SearchHandler(BaseHandler):
 
     # ── find_symbol ───────────────────────────────────────────────────────────
 
-    async def find_symbol(self, query: str, exact: bool = False, kinds: Optional[list] = None, max_results: int = 30) -> str:
+    async def find_symbol(self, query: str, exact: bool = False, kinds: list | None = None, max_results: int = 30) -> str:
         """Find symbol definitions using grep (simplified fallback)."""
         # Use search_code with a pattern that matches def/class/function declarations
         patterns = []
@@ -152,7 +151,7 @@ class SearchHandler(BaseHandler):
 
     # ── find_definition ───────────────────────────────────────────────────────
 
-    async def find_definition(self, name: str, hint_file: Optional[str] = None) -> str:
+    async def find_definition(self, name: str, hint_file: str | None = None) -> str:
         """Find where a symbol is defined using grep."""
         search_path = hint_file or ""
         # Search for definition patterns
@@ -161,6 +160,6 @@ class SearchHandler(BaseHandler):
 
     # ── find_references ───────────────────────────────────────────────────────
 
-    async def find_references(self, name: str, hint_file: Optional[str] = None, include_definitions: bool = False) -> str:
+    async def find_references(self, name: str, hint_file: str | None = None, include_definitions: bool = False) -> str:
         """Find all references to a symbol using grep."""
         return await self.search_code(query=name, max_results=50)

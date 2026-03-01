@@ -68,7 +68,7 @@ class TodoHandler(BaseHandler):
 
         self.ctx._todos = validated
 
-        counts: dict[str, int] = {s: 0 for s in self._VALID_STATUS}
+        counts: dict[str, int] = dict.fromkeys(self._VALID_STATUS, 0)
         for t in validated:
             counts[t["status"]] += 1
         summary = (

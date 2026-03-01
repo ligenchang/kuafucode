@@ -1,15 +1,18 @@
 """Tests for context assembly — file tree, project detection, ignore patterns."""
 
+import sys
 import tempfile
 from pathlib import Path
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # /home/claude -> nvagent symlink
 
-from nvagent.config import Config, ContextConfig
+from nvagent.config import Config
 from nvagent.core.context import (
-    build_file_tree, detect_project_type, build_system_prompt,
-    load_nvagent_ignore, is_ignored,
+    build_file_tree,
+    build_system_prompt,
+    detect_project_type,
+    is_ignored,
+    load_nvagent_ignore,
 )
 
 

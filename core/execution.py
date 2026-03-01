@@ -13,7 +13,6 @@ import signal
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 # ── Process group kill ─────────────────────────────────────────────────────────
 
@@ -207,7 +206,7 @@ def parse_test_output(output: str, framework: str) -> TestSuiteResult:
 
 # ── Test framework detection ───────────────────────────────────────────────────
 
-def detect_test_framework(workspace: Path) -> Optional[str]:
+def detect_test_framework(workspace: Path) -> str | None:
     if (workspace / "go.mod").exists():
         return "go"
     if (workspace / "Cargo.toml").exists():
@@ -234,7 +233,7 @@ def detect_test_framework(workspace: Path) -> Optional[str]:
     return None
 
 
-def build_test_command(framework: str, path: Optional[str] = None, extra_args: Optional[list[str]] = None) -> list[str]:
+def build_test_command(framework: str, path: str | None = None, extra_args: list[str] | None = None) -> list[str]:
     extra = extra_args or []
     fw = framework.lower()
     if fw == "pytest":
@@ -275,7 +274,7 @@ def detect_formatters(workspace: Path) -> list[str]:
     return found
 
 
-def build_formatter_command(formatter: str, path: Optional[str] = None, check_only: bool = False) -> list[str]:
+def build_formatter_command(formatter: str, path: str | None = None, check_only: bool = False) -> list[str]:
     fmt = formatter.lower()
     if fmt == "ruff-format":
         cmd = [shutil.which("ruff") or "ruff", "format"]

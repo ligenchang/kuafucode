@@ -2,10 +2,10 @@
 MCP _is_alive, watch file scanner, and CI exit codes."""
 
 import asyncio
+import sys
 import tempfile
 from pathlib import Path
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
@@ -51,8 +51,8 @@ async def secret_tool() -> str:
 
 
 def test_plugin_cannot_override_builtin():
+
     from nvagent.tools import ToolExecutor
-    import logging
 
     tmp = Path(tempfile.mkdtemp())
     plugin_dir = tmp / ".nvagent" / "tools"
@@ -282,7 +282,7 @@ def test_write_files_serial_with_confirm():
 # ── MCP _is_alive ──────────────────────────────────────────────────────────────
 
 def test_mcp_is_alive_false_when_not_started():
-    from nvagent.core.mcp import _McpServerProcess, McpServerConfig
+    from nvagent.core.mcp import McpServerConfig, _McpServerProcess
 
     cfg = McpServerConfig(name="test", command="nonexistent", args=[])
     proc = _McpServerProcess(cfg)
@@ -290,9 +290,8 @@ def test_mcp_is_alive_false_when_not_started():
 
 
 def test_mcp_is_alive_false_after_process_exits():
-    import subprocess
 
-    from nvagent.core.mcp import _McpServerProcess, McpServerConfig
+    from nvagent.core.mcp import McpServerConfig, _McpServerProcess
 
     cfg = McpServerConfig(name="test", command="echo", args=["hello"])
     proc = _McpServerProcess(cfg)

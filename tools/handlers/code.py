@@ -5,10 +5,9 @@ from __future__ import annotations
 import ast
 import asyncio
 import re
-import subprocess
 import shutil
+import subprocess
 from pathlib import Path
-from typing import Optional
 
 from nvagent.tools.handlers import BaseHandler
 
@@ -111,7 +110,7 @@ class CodeHandler(BaseHandler):
         except Exception as e:
             return f"Error reading {path}: {e}"
 
-    async def run_analysis(self, path: str = ".", checks: Optional[list] = None) -> str:
+    async def run_analysis(self, path: str = ".", checks: list | None = None) -> str:
         """Run available linters on the specified path."""
         target = self.ctx._resolve_path(path)
         results = []

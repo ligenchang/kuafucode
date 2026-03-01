@@ -15,14 +15,12 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
-
-import typer
 from typing import Annotated
 
-from nvagent.config import Config, load_config, save_config, init_workspace
-from nvagent.core.agent import Agent, AgentEvent
-from nvagent.core.session import Session, SessionStore
+import typer
+from nvagent.config import Config, init_workspace, load_config, save_config
+from nvagent.core.agent import Agent
+from nvagent.core.session import SessionStore
 
 app = typer.Typer(
     name="nvagent",
@@ -35,7 +33,7 @@ config_app = typer.Typer(help="Manage nvagent configuration")
 app.add_typer(config_app, name="config")
 
 
-def _get_workspace(workspace_arg: Optional[str]) -> Path:
+def _get_workspace(workspace_arg: str | None) -> Path:
     ws = Path(workspace_arg) if workspace_arg else Path.cwd()
     if not ws.exists():
         typer.echo(f"Error: workspace '{ws}' does not exist.", err=True)
@@ -63,10 +61,10 @@ def _setup(workspace: Path) -> tuple[Config, SessionStore]:
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w", help="Project directory")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w", help="Project directory")] = None,
     resume: Annotated[bool, typer.Option("--resume", "-r", help="Resume last session")] = False,
     version: Annotated[bool, typer.Option("--version", "-v", help="Show version")] = False,
-    model: Annotated[Optional[str], typer.Option("--model", "-m", help="Override default model")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m", help="Override default model")] = None,
 ):
     """⬛ nvagent — NVIDIA NIM powered terminal coding agent."""
     if version:
@@ -79,12 +77,12 @@ def main(
 
 @app.command()
 def chat(
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
     resume: Annotated[bool, typer.Option("--resume", "-r")] = False,
     new: Annotated[bool, typer.Option("--new", "-n")] = False,
     no_confirm: Annotated[bool, typer.Option("--no-confirm")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
-    model: Annotated[Optional[str], typer.Option("--model", "-m")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m")] = None,
     no_tui: Annotated[bool, typer.Option("--no-tui", help="Use classic ANSI terminal instead of Textual TUI")] = False,
 ):
     """Launch the interactive TUI (Textual two-panel by default, --no-tui for classic ANSI)."""
@@ -92,11 +90,11 @@ def chat(
 
 
 def _launch_chat(
-    workspace: Optional[str] = None,
+    workspace: str | None = None,
     resume: bool = True,
     no_confirm: bool = False,
     dry_run: bool = False,
-    model: Optional[str] = None,
+    model: str | None = None,
     no_tui: bool = False,
 ) -> None:
     ws = _get_workspace(workspace)
@@ -127,8 +125,8 @@ def _launch_chat(
 @app.command()
 def run(
     task: Annotated[str, typer.Argument(help="Task to perform")],
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", "-m")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m")] = None,
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ):
@@ -207,7 +205,7 @@ def run(
                 d = event.data if isinstance(event.data, dict) else {}
                 if not quiet:
                     print(f"\n\n{'─' * 60}", flush=True)
-                    print(f"✓  Task complete", flush=True)
+                    print("✓  Task complete", flush=True)
                     print(f"   Turns:   {d.get('turns', 0)}", flush=True)
                     print(f"   Tokens:  ~{d.get('tokens_used', 0):,}", flush=True)
                     if files_changed:
@@ -238,7 +236,7 @@ def run(
 
 
 @config_app.command("show")
-def config_show(workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None):
+def config_show(workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None):
     """Show current configuration."""
     ws = _get_workspace(workspace)
     init_workspace(ws)
@@ -255,7 +253,7 @@ def config_show(workspace: Annotated[Optional[str], typer.Option("--workspace", 
 def config_set(
     key: Annotated[str, typer.Argument(help="Config key (e.g. api_key, models.default)")],
     value: Annotated[str, typer.Argument(help="Value to set")],
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
 ):
     """Set a configuration value.
 
@@ -300,7 +298,7 @@ def config_set(
 
 @config_app.command("init")
 def config_init(
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Non-interactive: accept defaults")] = False,
 ):
     """Interactive setup wizard — configure API key, model, and preferences."""
@@ -325,13 +323,13 @@ def config_init(
         key = typer.prompt("  NVIDIA API key (nvapi-...)", default="", show_default=False)
         if key.strip():
             config.api.api_key = key.strip()
-            typer.echo(f"  ✓ API key saved")
+            typer.echo("  ✓ API key saved")
         else:
             typer.echo("  ⚠  Skipped — set later with: nvagent config set api_key nvapi-...")
 
     # ── Step 2: Model selection ──────────────────────────────────────────────
     from nvagent.config import SUPPORTED_MODELS
-    typer.echo(f"\n  Available models:")
+    typer.echo("\n  Available models:")
     for i, m in enumerate(SUPPORTED_MODELS):
         current = " ← default" if m == config.models.default else ""
         typer.echo(f"    {i + 1}. {m}{current}")
@@ -366,12 +364,12 @@ def config_init(
     typer.echo(f"  Model:       {config.models.default}")
     typer.echo(f"  Safe mode:   {config.agent.safe_mode}")
     typer.echo(f"  Git checkpoints: {config.safety.git_checkpoint}")
-    typer.echo(f"\n  Run `nvagent chat` to start coding.\n")
+    typer.echo("\n  Run `nvagent chat` to start coding.\n")
 
 
 @app.command()
 def sessions(
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
     limit: Annotated[int, typer.Option("--limit", "-n")] = 10,
 ):
     """List recent sessions for this workspace."""
@@ -395,7 +393,7 @@ def sessions(
 
 
 @app.command()
-def models(workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None):
+def models(workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None):
     """List available NVIDIA NIM models."""
     ws = _get_workspace(workspace)
     config, _ = _setup(ws)
@@ -416,10 +414,10 @@ def models(workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")
 @app.command()
 def watch(
     goal: Annotated[str, typer.Argument(help="Goal to keep achieving (e.g. 'keep tests green')")],
-    workspace: Annotated[Optional[str], typer.Option("--workspace", "-w")] = None,
-    model: Annotated[Optional[str], typer.Option("--model", "-m")] = None,
+    workspace: Annotated[str | None, typer.Option("--workspace", "-w")] = None,
+    model: Annotated[str | None, typer.Option("--model", "-m")] = None,
     debounce: Annotated[float, typer.Option("--debounce", help="Seconds to wait after last change before triggering")] = 2.0,
-    patterns: Annotated[Optional[str], typer.Option("--patterns", help="Glob patterns to watch, comma-separated (default: *.py,*.ts,*.js,*.go,*.rs)")] = None,
+    patterns: Annotated[str | None, typer.Option("--patterns", help="Glob patterns to watch, comma-separated (default: *.py,*.ts,*.js,*.go,*.rs)")] = None,
     max_runs: Annotated[int, typer.Option("--max-runs", help="Max agent runs before stopping (0=unlimited)")] = 0,
     dry_run: Annotated[bool, typer.Option("--dry-run")] = False,
 ):
@@ -450,7 +448,7 @@ def watch(
     typer.echo(f"  debounce: {debounce}s")
     if max_runs:
         typer.echo(f"  max runs: {max_runs}")
-    typer.echo(f"\n  Watching for changes… (Ctrl+C to stop)\n")
+    typer.echo("\n  Watching for changes… (Ctrl+C to stop)\n")
 
     # Use polling-based watcher (no watchdog dependency needed)
     _nvagent_dir = ws / ".nvagent"
@@ -580,7 +578,7 @@ def watch(
 
                 # Refresh snapshot after agent may have changed files
                 prev_snapshot = _snapshot(ws)
-                typer.echo(f"\n  Watching for changes… (Ctrl+C to stop)\n")
+                typer.echo("\n  Watching for changes… (Ctrl+C to stop)\n")
 
     except KeyboardInterrupt:
         typer.echo(f"\n\n  Stopped after {run_count} run(s).\n")

@@ -13,10 +13,8 @@ Run with:
 
 from __future__ import annotations
 
-import asyncio
 import difflib
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -46,7 +44,6 @@ def _make_config(ws: Path):
 
 def _make_session(ws: Path):
     """Return a fresh in-memory session."""
-    import sqlite3
     from nvagent.core.session import SessionStore
     db = ws / ".nvagent" / "sessions.db"
     db.parent.mkdir(parents=True, exist_ok=True)
@@ -213,7 +210,7 @@ class TestAppMount:
 
     @pytest.mark.asyncio
     async def test_app_starts_and_has_chat_log(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, ChatLog
+        from nvagent.tui.app import ChatLog, NVAgentApp
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -225,8 +222,8 @@ class TestAppMount:
 
     @pytest.mark.asyncio
     async def test_input_bar_present(self, tmp_path):
-        from textual.widgets import Input
         from nvagent.tui.app import NVAgentApp
+        from textual.widgets import Input
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -238,7 +235,7 @@ class TestAppMount:
 
     @pytest.mark.asyncio
     async def test_file_panel_present(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, FilePanel
+        from nvagent.tui.app import FilePanel, NVAgentApp
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -250,8 +247,8 @@ class TestAppMount:
 
     @pytest.mark.asyncio
     async def test_header_contains_model_name(self, tmp_path):
-        from textual.widgets import Label
         from nvagent.tui.app import NVAgentApp
+        from textual.widgets import Label
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -267,8 +264,8 @@ class TestSlashCommands:
     """Slash commands update the chat log correctly."""
 
     async def _run_slash(self, tmp_path, cmd: str):
+        from nvagent.tui.app import ChatLog, NVAgentApp
         from textual.widgets import Input
-        from nvagent.tui.app import NVAgentApp, ChatLog
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -284,7 +281,7 @@ class TestSlashCommands:
 
     @pytest.mark.asyncio
     async def test_help_command_writes_to_log(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, ChatLog
+        from nvagent.tui.app import NVAgentApp
         from textual.widgets import Input
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
@@ -318,7 +315,7 @@ class TestSlashCommands:
 
     @pytest.mark.asyncio
     async def test_clear_command_resets_log(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, ChatLog
+        from nvagent.tui.app import NVAgentApp
         from textual.widgets import Input
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
@@ -340,7 +337,7 @@ class TestFilePanel:
 
     @pytest.mark.asyncio
     async def test_show_file_renders(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, FilePanel
+        from nvagent.tui.app import FilePanel, NVAgentApp
         from textual.widgets import Label
         ws = _make_workspace(tmp_path, {"hello.py": "print('hi')\n"})
         cfg = _make_config(ws)
@@ -356,7 +353,7 @@ class TestFilePanel:
 
     @pytest.mark.asyncio
     async def test_show_diff_updates_label(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, FilePanel
+        from nvagent.tui.app import FilePanel, NVAgentApp
         from textual.widgets import Label
         ws = _make_workspace(tmp_path, {"mod.py": "x = 1\n"})
         cfg = _make_config(ws)
@@ -374,7 +371,7 @@ class TestFilePanel:
 
     @pytest.mark.asyncio
     async def test_missing_file_shows_error(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, FilePanel
+        from nvagent.tui.app import FilePanel, NVAgentApp
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)
@@ -407,7 +404,6 @@ class TestConfirmModal:
                 result.append(val)
                 self.exit()
 
-        from textual.app import App
         app = _TestApp()
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause(0.1)
@@ -494,7 +490,7 @@ class TestKeyBindings:
 
     @pytest.mark.asyncio
     async def test_ctrl_l_clears_chat(self, tmp_path):
-        from nvagent.tui.app import NVAgentApp, ChatLog
+        from nvagent.tui.app import NVAgentApp
         ws = _make_workspace(tmp_path)
         cfg = _make_config(ws)
         sess, store = _make_session(ws)

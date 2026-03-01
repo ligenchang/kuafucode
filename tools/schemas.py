@@ -13,7 +13,7 @@ import sys
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _kill_proc_group(proc: "asyncio.subprocess.Process") -> None:  # type: ignore[name-defined]
+def _kill_proc_group(proc: asyncio.subprocess.Process) -> None:  # type: ignore[name-defined]
     """Kill the process and its entire process group on Unix (SIGKILL).
 
     Uses os.killpg so child processes spawned by the shell command are also

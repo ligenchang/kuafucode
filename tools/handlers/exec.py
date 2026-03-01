@@ -10,18 +10,17 @@ import fnmatch
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 from nvagent.core.execution import (
     CommandResult,
-    parse_test_output,
-    detect_test_framework,
+    _kill_proc_group,
+    build_formatter_command,
     build_test_command,
     detect_formatters,
-    build_formatter_command,
+    detect_test_framework,
+    parse_test_output,
 )
 from nvagent.tools.handlers import BaseHandler
-from nvagent.core.execution import _kill_proc_group
 
 
 class ExecHandler(BaseHandler):
@@ -32,10 +31,10 @@ class ExecHandler(BaseHandler):
     async def run_command(
         self,
         command: str,
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
         timeout: int = 60,
         max_output_chars: int = 8000,
-        filter: Optional[str] = None,
+        filter: str | None = None,
     ) -> str:
         ok, reason = self.ctx.sandbox.validate_command(command)
         if not ok:
@@ -68,7 +67,7 @@ class ExecHandler(BaseHandler):
                 while True:
                     try:
                         line = await asyncio.wait_for(stream.readline(), timeout=timeout)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         break
                     if not line:
                         break
@@ -91,7 +90,7 @@ class ExecHandler(BaseHandler):
                     raw_stdout, raw_stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
                     stdout_chunks = [raw_stdout.decode("utf-8", errors="replace")]
                     stderr_chunks = [raw_stderr.decode("utf-8", errors="replace")]
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _kill_proc_group(proc)
                 await proc.wait()
                 return f"⏱ Command timed out after {timeout}s: {command}"
@@ -166,7 +165,7 @@ class ExecHandler(BaseHandler):
             return "\n".join(parts)
 
         except FileNotFoundError:
-            return f"Error: Command not found. Make sure it's installed."
+            return "Error: Command not found. Make sure it's installed."
         except Exception as e:
             return f"Error running command: {e}"
 
@@ -174,11 +173,11 @@ class ExecHandler(BaseHandler):
 
     async def run_tests(
         self,
-        path: Optional[str] = None,
-        framework: Optional[str] = None,
-        extra_args: Optional[list] = None,
+        path: str | None = None,
+        framework: str | None = None,
+        extra_args: list | None = None,
         retry_on_fail: bool = False,
-        filter: Optional[str] = None,
+        filter: str | None = None,
     ) -> str:
         fw = framework or detect_test_framework(self.ctx.workspace)
         if not fw:
@@ -191,7 +190,7 @@ class ExecHandler(BaseHandler):
         cmd = build_test_command(fw, path, [str(a) for a in (extra_args or [])])
         max_attempts = 3 if retry_on_fail else 1
 
-        last_result: Optional[str] = None
+        last_result: str | None = None
         for attempt in range(1, max_attempts + 1):
             t0 = __import__("time").monotonic()
             try:
@@ -203,7 +202,7 @@ class ExecHandler(BaseHandler):
                 )
                 stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=300)
                 duration = __import__("time").monotonic() - t0
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return f"⏱ Test run timed out (300s). Command: {' '.join(cmd)}"
             except FileNotFoundError:
                 return f"Error: test runner not found: {cmd[0]!r}. Is it installed?"
@@ -253,8 +252,8 @@ class ExecHandler(BaseHandler):
 
     async def run_formatter(
         self,
-        path: Optional[str] = None,
-        formatter: Optional[str] = None,
+        path: str | None = None,
+        formatter: str | None = None,
         check_only: bool = False,
     ) -> str:
         if formatter:
@@ -276,7 +275,7 @@ class ExecHandler(BaseHandler):
                 cwd=self.ctx.workspace,
             )
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=120)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return f"⏱ Formatter timed out: {' '.join(cmd)}"
         except FileNotFoundError:
             return f"Error: formatter not found: {cmd[0]!r}"
@@ -303,7 +302,7 @@ class ExecHandler(BaseHandler):
     async def find_files(
         self,
         pattern: str,
-        path: Optional[str] = None,
+        path: str | None = None,
         max_results: int = 100,
     ) -> str:
         search_root = self.ctx._resolve_path(path) if path else self.ctx.workspace

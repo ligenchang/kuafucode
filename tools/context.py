@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
 
 _BLOCKED_CMD_PATTERNS = [
     r"rm\s+-[a-zA-Z]*r[a-zA-Z]*f\s+/", r"sudo\s+rm", r"\bmkfs\b",
@@ -56,10 +56,10 @@ class ToolContext:
         self,
         workspace: Path,
         max_file_bytes: int = 102400,
-        confirm_fn: Optional[Callable[[str, str], Awaitable[bool]]] = None,
+        confirm_fn: Callable[[str, str], Awaitable[bool]] | None = None,
         safe_mode: bool = True,
         dry_run: bool = False,
-        stream_fn: Optional[Callable[[str], None]] = None,
+        stream_fn: Callable[[str], None] | None = None,
     ) -> None:
         self.workspace = workspace
         self.max_file_bytes = max_file_bytes
@@ -73,12 +73,12 @@ class ToolContext:
         self._checkpoints: dict[str, dict[str, str | None]] = {}
         self._read_mtimes: dict[str, int] = {}
         self._path_locks: dict[str, asyncio.Lock] = {}
-        self._read_result_cache: "SimpleCache" = SimpleCache()
-        self._rg_path: Optional[str] = shutil.which("rg")
-        self._patch_bin: Optional[str] = shutil.which("patch")
+        self._read_result_cache: SimpleCache = SimpleCache()
+        self._rg_path: str | None = shutil.which("rg")
+        self._patch_bin: str | None = shutil.which("patch")
         self._todos: list[dict] = []
         self._retry_policy = _SimpleRetryPolicy()
-        self.active_proc: Optional[object] = None  # currently running subprocess, for interrupt
+        self.active_proc: object | None = None  # currently running subprocess, for interrupt
 
     def _resolve_path(self, path: str) -> Path:
         p = Path(path)
@@ -87,7 +87,7 @@ class ToolContext:
     def _get_path_lock(self, fpath: Path) -> asyncio.Lock:
         return self._path_locks.setdefault(str(fpath), asyncio.Lock())
 
-    def _check_stale(self, fpath: Path) -> Optional[str]:
+    def _check_stale(self, fpath: Path) -> str | None:
         key = str(fpath)
         recorded = self._read_mtimes.get(key)
         if recorded is None or not fpath.exists():
@@ -112,7 +112,7 @@ class SimpleCache:
         self._data: dict[tuple[str, int], str] = {}
         self._max_size = max_size
 
-    def get(self, path: str, mtime_ns: int) -> Optional[str]:
+    def get(self, path: str, mtime_ns: int) -> str | None:
         return self._data.get((path, mtime_ns))
 
     def put(self, path: str, mtime_ns: int, content: str) -> None:
@@ -123,5 +123,5 @@ class SimpleCache:
         self._data[(path, mtime_ns)] = content
 
     # Compat shim for old-style cache.get(path, mtime) calls from file.py
-    def __call__(self, path: str, mtime_ns: int) -> Optional[str]:
+    def __call__(self, path: str, mtime_ns: int) -> str | None:
         return self.get(path, mtime_ns)

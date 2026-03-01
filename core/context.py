@@ -7,7 +7,6 @@ import fnmatch
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from nvagent.config import Config
 
@@ -108,11 +107,11 @@ def detect_project_type(workspace: Path) -> str:
     return ", ".join(detected) if detected else "Unknown"
 
 
-def _read_key_file(path: Path, max_bytes: int = 3000) -> Optional[str]:
+def _read_key_file(path: Path, max_bytes: int = 3000) -> str | None:
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
         if len(content) > max_bytes:
-            content = content[:max_bytes] + f"\n... [truncated]"
+            content = content[:max_bytes] + "\n... [truncated]"
         return content
     except Exception:
         return None

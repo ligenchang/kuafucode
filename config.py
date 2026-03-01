@@ -6,7 +6,6 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 SUPPORTED_MODELS: list[str] = [
     "qwen/qwen3.5-397b-a17b",
@@ -126,7 +125,7 @@ class Config:
         return self.api.api_key or os.environ.get("NVIDIA_API_KEY", "")
 
 
-def load_config(workspace: Optional[Path] = None) -> Config:
+def load_config(workspace: Path | None = None) -> Config:
     config_dir = (workspace or Path.cwd()) / ".nvagent"
     config_file = config_dir / "config.toml"
     cfg = Config()
@@ -154,7 +153,7 @@ def load_config(workspace: Optional[Path] = None) -> Config:
     return cfg
 
 
-def save_config(cfg: Config, workspace: Optional[Path] = None) -> None:
+def save_config(cfg: Config, workspace: Path | None = None) -> None:
     config_dir = (workspace or Path.cwd()) / ".nvagent"
     config_dir.mkdir(parents=True, exist_ok=True)
     config_file = config_dir / "config.toml"
@@ -192,7 +191,7 @@ def save_config(cfg: Config, workspace: Optional[Path] = None) -> None:
     config_file.write_text("".join(lines))
 
 
-def init_workspace(workspace: Optional[Path] = None) -> Path:
+def init_workspace(workspace: Path | None = None) -> Path:
     config_dir = (workspace or Path.cwd()) / ".nvagent"
     config_dir.mkdir(parents=True, exist_ok=True)
 

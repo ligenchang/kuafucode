@@ -6,7 +6,6 @@ Git operation handlers:
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
 
 from nvagent.tools.handlers import BaseHandler
 
@@ -49,8 +48,8 @@ class GitHandler(BaseHandler):
     async def git_diff(
         self,
         staged: bool = False,
-        file: Optional[str] = None,
-        commit: Optional[str] = None,
+        file: str | None = None,
+        commit: str | None = None,
     ) -> str:
         cmd = ["git", "diff"]
         if staged:
@@ -76,7 +75,7 @@ class GitHandler(BaseHandler):
             if len(diff) > 16000:
                 diff = diff[:16000] + "\n... [diff truncated, use file= to narrow scope]"
             return diff
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return "git diff timed out."
         except Exception as e:
             return f"Error: {e}"
@@ -145,7 +144,7 @@ class GitHandler(BaseHandler):
     async def git_log(
         self,
         limit: int = 10,
-        file: Optional[str] = None,
+        file: str | None = None,
         oneline: bool = True,
     ) -> str:
         cmd = ["git", "log", f"-{max(1, limit)}"]

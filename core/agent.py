@@ -12,20 +12,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import threading
-import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator, Awaitable, Callable, Optional
 
 from nvagent.config import Config
-from nvagent.core.client import NIMClient, StreamEvent
+from nvagent.core.client import NIMClient
 from nvagent.core.context import build_system_prompt
 from nvagent.core.mcp import McpClient
-from nvagent.core.safety import GitCheckpointer, LoopDetector, ResourceGuard, Violation
+from nvagent.core.safety import GitCheckpointer, LoopDetector, ResourceGuard
 from nvagent.core.session import Session, SessionStore, read_memory
-from nvagent.tools import ToolExecutor, TOOL_SCHEMAS
+from nvagent.tools import ToolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +86,7 @@ class Agent:
         workspace: Path,
         session: Session,
         session_store: SessionStore,
-        confirm_fn: Optional[Callable[[str, str], Awaitable[bool]]] = None,
+        confirm_fn: Callable[[str, str], Awaitable[bool]] | None = None,
     ) -> None:
         self.config = config
         self.workspace = workspace
@@ -99,7 +97,7 @@ class Agent:
         self._mcp_client = McpClient(config.mcp.servers)
         self._mcp_started = False
 
-        self._stream_fn: Optional[Callable[[str], None]] = None
+        self._stream_fn: Callable[[str], None] | None = None
 
         self.tools = ToolExecutor(
             workspace,
@@ -126,7 +124,7 @@ class Agent:
         self.resource_guard = ResourceGuard(config.safety)
 
         # Cached system prompt (rebuilt when memory changes)
-        self._system_prompt: Optional[str] = None
+        self._system_prompt: str | None = None
 
     def cancel(self) -> None:
         self._cancelled = True
@@ -140,7 +138,7 @@ class Agent:
     def _configs_have_mcp(self) -> bool:
         return bool(self.config.mcp.servers)
 
-    def set_stream_fn(self, fn: Optional[Callable[[str], None]]) -> None:
+    def set_stream_fn(self, fn: Callable[[str], None] | None) -> None:
         """Set a callback for live tool output (e.g. run_command streaming)."""
         self._stream_fn = fn
         self.tools.stream_fn = fn

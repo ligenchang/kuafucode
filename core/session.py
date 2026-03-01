@@ -7,7 +7,6 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -79,7 +78,7 @@ class SessionStore:
             conn.commit()
         session.updated_at = now
 
-    def get_last_session(self, workspace: str) -> Optional[Session]:
+    def get_last_session(self, workspace: str) -> Session | None:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT id, workspace, created_at, updated_at, messages, summary "

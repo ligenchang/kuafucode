@@ -24,24 +24,25 @@ Internal structure:
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Optional
 
-from nvagent.tools.context import ToolContext
-from nvagent.tools.schemas import TOOL_SCHEMAS
-from nvagent.tools.handlers.file import FileHandler
-from nvagent.tools.handlers.search import SearchHandler
-from nvagent.tools.handlers.git import GitHandler
-from nvagent.tools.handlers.code import CodeHandler
-from nvagent.tools.handlers.memory import MemoryHandler
-from nvagent.tools.handlers.exec import ExecHandler
-from nvagent.tools.handlers.vc import VcHandler
-from nvagent.tools.handlers.notebook import NotebookHandler
-from nvagent.tools.handlers.url import UrlHandler
-from nvagent.tools.handlers.todo import TodoHandler
 from nvagent.core.mcp import McpClient
+from nvagent.tools.context import ToolContext
+from nvagent.tools.handlers.code import CodeHandler
+from nvagent.tools.handlers.exec import ExecHandler
+from nvagent.tools.handlers.file import FileHandler
+from nvagent.tools.handlers.git import GitHandler
+from nvagent.tools.handlers.memory import MemoryHandler
+from nvagent.tools.handlers.notebook import NotebookHandler
+from nvagent.tools.handlers.search import SearchHandler
+from nvagent.tools.handlers.todo import TodoHandler
+from nvagent.tools.handlers.url import UrlHandler
+from nvagent.tools.handlers.vc import VcHandler
+from nvagent.tools.schemas import TOOL_SCHEMAS
 
-__all__ = ["ToolExecutor", "TOOL_SCHEMAS"]
+__all__ = ["TOOL_SCHEMAS", "ToolExecutor"]
 
 
 class ToolExecutor:
@@ -56,11 +57,11 @@ class ToolExecutor:
         self,
         workspace: Path,
         max_file_bytes: int = 102400,
-        confirm_fn: Optional[Callable[[str, str], Awaitable[bool]]] = None,
+        confirm_fn: Callable[[str, str], Awaitable[bool]] | None = None,
         safe_mode: bool = True,
         dry_run: bool = False,
-        mcp_client: Optional[McpClient] = None,
-        stream_fn: Optional[Callable[[str], None]] = None,
+        mcp_client: McpClient | None = None,
+        stream_fn: Callable[[str], None] | None = None,
     ) -> None:
         # ── Shared context (all handlers share this object) ───────────────────
         self._ctx = ToolContext(
@@ -73,7 +74,7 @@ class ToolExecutor:
         )
 
         # ── Optional MCP client ───────────────────────────────────────────────
-        self._mcp_client: Optional[McpClient] = mcp_client
+        self._mcp_client: McpClient | None = mcp_client
 
         # ── Convenience aliases kept for backward-compat ─────────────────────
         self.workspace = self._ctx.workspace

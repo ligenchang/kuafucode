@@ -10,7 +10,6 @@ import difflib
 import os
 import re
 from pathlib import Path
-from typing import Optional
 
 # symbols removed - use simple preview fallback
 from nvagent.tools.handlers import BaseHandler
@@ -24,8 +23,8 @@ class FileHandler(BaseHandler):
     async def read_file(
         self,
         path: str,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> str:
         fpath = self.ctx._resolve_path(path)
         lock = self.ctx._get_path_lock(fpath)
@@ -36,8 +35,8 @@ class FileHandler(BaseHandler):
         self,
         path: str,
         fpath: Path,
-        start_line: Optional[int] = None,
-        end_line: Optional[int] = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
     ) -> str:
         if not fpath.exists():
             return f"Error: File not found: {fpath}"
@@ -498,8 +497,8 @@ class FileHandler(BaseHandler):
         path: str = "",
         old_str: str = "",
         new_str: str = "",
-        view_range: Optional[list] = None,
-        insert_line: Optional[int] = None,
+        view_range: list | None = None,
+        insert_line: int | None = None,
     ) -> str:
         """Compatibility shim for models that emit Anthropic-style str_replace_editor calls.
 

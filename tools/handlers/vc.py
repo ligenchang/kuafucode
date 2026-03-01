@@ -10,7 +10,6 @@ import difflib
 import re
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from nvagent.tools.handlers import BaseHandler
 
@@ -84,7 +83,7 @@ class VcHandler(BaseHandler):
     async def _apply_patch_python(self, patch: str, dry_run: bool) -> str:
         """Pure-Python unified diff patch application."""
         file_patches: list[tuple[str, list[tuple[int, list[str], list[str]]]]] = []
-        current_file: Optional[str] = None
+        current_file: str | None = None
         current_hunks: list[tuple[int, list[str], list[str]]] = []
         hunk_old: list[str] = []
         hunk_new: list[str] = []
@@ -188,8 +187,8 @@ class VcHandler(BaseHandler):
 
     async def checkpoint(
         self,
-        name: Optional[str] = None,
-        include_paths: Optional[list] = None,
+        name: str | None = None,
+        include_paths: list | None = None,
     ) -> str:
         label = name or f"cp{len(self.ctx._checkpoints) + 1}"
         loop_cp = asyncio.get_event_loop()
@@ -229,7 +228,7 @@ class VcHandler(BaseHandler):
 
     # ── rollback ──────────────────────────────────────────────────────────────
 
-    async def rollback(self, name: Optional[str] = None) -> str:
+    async def rollback(self, name: str | None = None) -> str:
         if not self.ctx._checkpoints:
             return (
                 "No checkpoints available. "

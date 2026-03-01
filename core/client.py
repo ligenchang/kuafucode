@@ -12,14 +12,16 @@ import json
 import re
 import time
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator, Optional
 
 import httpx
 from openai import AsyncOpenAI
 
 try:
-    from openai import RateLimitError as _OAIRateLimit, APIStatusError as _OAIStatus, APITimeoutError as _OAITimeout
+    from openai import APIStatusError as _OAIStatus
+    from openai import APITimeoutError as _OAITimeout
+    from openai import RateLimitError as _OAIRateLimit
 except ImportError:
     _OAIRateLimit = _OAIStatus = _OAITimeout = Exception  # type: ignore
 
@@ -265,7 +267,7 @@ class NIMClient:
     async def stream_chat(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]] = None,
+        tools: list[dict] | None = None,
         force_tool_use: bool = False,
     ) -> AsyncIterator[StreamEvent]:
         from nvagent.config import SUPPORTED_MODELS
@@ -320,7 +322,7 @@ class NIMClient:
     async def _stream_native(
         self,
         messages: list[dict],
-        tools: Optional[list[dict]],
+        tools: list[dict] | None,
         model: str,
         force_tool_use: bool = False,
     ) -> AsyncIterator[StreamEvent]:
@@ -339,7 +341,7 @@ class NIMClient:
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}}
 
         tool_calls_acc: dict[int, dict] = {}
-        finish_reason: Optional[str] = None
+        finish_reason: str | None = None
         stripper = _ThinkStripper()
         input_tokens = output_tokens = 0
 

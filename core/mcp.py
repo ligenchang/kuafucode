@@ -43,7 +43,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -81,14 +81,14 @@ class McpServerConfig:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _make_request(id: int, method: str, params: Optional[dict] = None) -> bytes:
+def _make_request(id: int, method: str, params: dict | None = None) -> bytes:
     msg: dict[str, Any] = {"jsonrpc": "2.0", "id": id, "method": method}
     if params is not None:
         msg["params"] = params
     return (json.dumps(msg, separators=(",", ":")) + "\n").encode()
 
 
-def _make_notification(method: str, params: Optional[dict] = None) -> bytes:
+def _make_notification(method: str, params: dict | None = None) -> bytes:
     msg: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
     if params is not None:
         msg["params"] = params
@@ -111,10 +111,10 @@ class _McpServerProcess:
 
     def __init__(self, cfg: McpServerConfig) -> None:
         self.cfg = cfg
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._next_id: int = 1
         self._pending: dict[int, asyncio.Future] = {}
-        self._reader_task: Optional[asyncio.Task] = None
+        self._reader_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()  # serialise writes to stdin
         self._tools: list[dict] = []  # raw MCP tool descriptors
         self._started = False
@@ -201,7 +201,7 @@ class _McpServerProcess:
 
     # ── JSON-RPC send/receive ─────────────────────────────────────────────────
 
-    async def _send_request(self, method: str, params: Optional[dict], timeout: float) -> dict:
+    async def _send_request(self, method: str, params: dict | None, timeout: float) -> dict:
         assert self._proc and self._proc.stdin
         req_id = self._next_id
         self._next_id += 1
@@ -213,7 +213,7 @@ class _McpServerProcess:
             await self._proc.stdin.drain()
         return await asyncio.wait_for(fut, timeout=timeout)
 
-    async def _send_notification(self, method: str, params: Optional[dict] = None) -> None:
+    async def _send_notification(self, method: str, params: dict | None = None) -> None:
         assert self._proc and self._proc.stdin
         payload = _make_notification(method, params)
         async with self._lock:
@@ -289,7 +289,7 @@ class _McpServerProcess:
                 {"name": tool_name, "arguments": arguments},
                 timeout=_CALL_TIMEOUT,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return f"[MCP] Tool '{tool_name}' timed out after {_CALL_TIMEOUT:.0f}s."
         except Exception as exc:
             return f"[MCP] Tool '{tool_name}' error: {exc}"

@@ -10,17 +10,31 @@ import os
 import re
 import signal
 import sys
-import time
 from pathlib import Path
-from typing import Optional
 
-from nvagent.tui.ansi import (
-    BLUE, BOLD, DIM, GRAY, GREEN, HIDE_CURSOR, ORANGE, RED, RESET,
-    SHOW_CURSOR, VIOLET, WHITE, YELLOW, c, cols, out, rule, strip_ansi, ts,
-)
 from nvagent.config import Config
-from nvagent.core.agent import Agent, AgentEvent
+from nvagent.core.agent import Agent
 from nvagent.core.session import Session, SessionStore
+from nvagent.tui.ansi import (
+    BLUE,
+    BOLD,
+    DIM,
+    GRAY,
+    GREEN,
+    HIDE_CURSOR,
+    ORANGE,
+    RED,
+    RESET,
+    SHOW_CURSOR,
+    VIOLET,
+    WHITE,
+    YELLOW,
+    c,
+    out,
+    rule,
+    strip_ansi,
+    ts,
+)
 
 BRED = "\033[1;31m"
 
@@ -28,14 +42,15 @@ BRED = "\033[1;31m"
 
 try:
     from prompt_toolkit import PromptSession as _PTSession
-    from prompt_toolkit.key_binding import KeyBindings as _PTKeyBindings
+    from prompt_toolkit.completion import Completer as _PTCompleter
+    from prompt_toolkit.completion import Completion as _PTCompletion
     from prompt_toolkit.history import InMemoryHistory as _PTInMemoryHistory
-    from prompt_toolkit.completion import Completer as _PTCompleter, Completion as _PTCompletion
+    from prompt_toolkit.key_binding import KeyBindings as _PTKeyBindings
     _PT_AVAILABLE = True
 except ImportError:
     _PT_AVAILABLE = False
 
-_pt_session: "_PTSession | None" = None
+_pt_session: _PTSession | None = None
 
 _IGNORE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", "dist", "build", ".mypy_cache"}
 
@@ -47,7 +62,7 @@ class _FileIndex:
     Rebuilds lazily on next Tab press after invalidation.
     """
 
-    def __init__(self, workspace: "Path") -> None:
+    def __init__(self, workspace: Path) -> None:
         self.workspace = workspace
         self._files: list[str] = []
         self._dirty = True
@@ -84,7 +99,7 @@ class _FileIndex:
 class _AtMentionCompleter:
     """Completes @filename mentions using a cached file index (Tab only, not while typing)."""
 
-    def __init__(self, index: "_FileIndex") -> None:
+    def __init__(self, index: _FileIndex) -> None:
         self._index = index
 
     def get_completions(self, document, complete_event):
@@ -100,10 +115,10 @@ class _AtMentionCompleter:
             yield Completion(rel, start_position=-len(prefix))
 
 
-_file_index: "_FileIndex | None" = None
+_file_index: _FileIndex | None = None
 
 
-def _get_file_index(workspace: "Path") -> "_FileIndex":
+def _get_file_index(workspace: Path) -> _FileIndex:
     global _file_index
     if _file_index is None or _file_index.workspace != workspace:
         _file_index = _FileIndex(workspace)
@@ -115,7 +130,7 @@ def _reset_pt_session() -> None:
     _pt_session = None
 
 
-def _get_pt_session(workspace: "Path | None" = None) -> "_PTSession":
+def _get_pt_session(workspace: Path | None = None) -> _PTSession:
     global _pt_session
     if _pt_session is None:
         kb = _PTKeyBindings()
@@ -138,7 +153,7 @@ def _get_pt_session(workspace: "Path | None" = None) -> "_PTSession":
     return _pt_session
 
 
-async def _ainput(prompt: str, workspace: "Path | None" = None) -> str:
+async def _ainput(prompt: str, workspace: Path | None = None) -> str:
     """Read a line of user input, supporting multi-line with Alt+Enter and @-file completion."""
     if _PT_AVAILABLE:
         try:
@@ -169,7 +184,7 @@ class Spinner:
     def __init__(self) -> None:
         self._active = False
         self._msg = ""
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._col = 0
 
     def start(self, msg: str = "") -> None:
@@ -320,7 +335,7 @@ class NVAgentREPL:
         self.session = session
         self.session_store = session_store
         self.no_confirm = no_confirm
-        self.agent: Optional["Agent"] = None
+        self.agent: Agent | None = None
         self._interrupt_event = asyncio.Event()
         self._session_tokens = 0  # cumulative tokens this session
         self._history_log: list[dict] = []  # {turn, files, commands, git_sha, tokens}

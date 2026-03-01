@@ -6,7 +6,6 @@ import fcntl as _fcntl
 import os
 import sys
 import time
-from typing import Callable
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Blocking-stdout guard
