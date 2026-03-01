@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 http2 = ["h2>=4.0"]
+tui = ["textual>=0.70"]
 
 [project.scripts]
 nvagent = "nvagent.cli:app"
@@ -26,10 +27,7 @@ nvagent = "nvagent.cli:app"
 "nvagent" = "."
 
 [tool.setuptools]
-packages = ["nvagent", "nvagent.core", "nvagent.core.client", "nvagent.core.execution", "nvagent.core.extractors", "nvagent.core.planning", "nvagent.core.retrieval", "nvagent.core.state", "nvagent.tools", "nvagent.tools.handlers", "nvagent.tui", "nvagent.tui.app"]
-
-[tool.setuptools.package-data]
-"nvagent" = ["tui/styles/*.tcss"]
+packages = ["nvagent", "nvagent.core", "nvagent.tools", "nvagent.tools.handlers", "nvagent.tui"]
 
 [dependency-groups]
 dev = [
@@ -100,3 +98,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # allow unused imports in __init__
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

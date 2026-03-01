@@ -12,12 +12,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from nvagent.core.symbols import (
-    find_definition,
-    find_references,
-    ReferenceSite,
-)
-from nvagent.core.index import get_workspace_index
+# Symbol index removed — using grep-based search fallbacks
 from nvagent.tools.handlers import BaseHandler
 
 
@@ -139,94 +134,33 @@ class SearchHandler(BaseHandler):
 
     # ── find_symbol ───────────────────────────────────────────────────────────
 
-    async def find_symbol(
-        self,
-        query: str,
-        exact: bool = False,
-        kinds: Optional[list] = None,
-        max_results: int = 30,
-    ) -> str:
-        idx = get_workspace_index(self.ctx.workspace)
-        with idx._lock:
-            n_cached = len(idx._cache)
-        if n_cached < 5:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, lambda: idx.build(max_files=2000))
-
-        if exact:
-            matches = idx.find_symbol(query, kinds=kinds)
-        else:
-            matches = idx.search_symbols(query, kinds=kinds, max_results=max_results)
-
-        if not matches:
-            return f"No symbols found matching {query!r}."
-
-        lines = [
-            f"## Symbols matching {query!r} ({len(matches)} result{'s' if len(matches) != 1 else ''}):"
-        ]
-        for m in matches[:max_results]:
-            lines.append(m.render(self.ctx.workspace))
-        return "\n".join(lines)
+    async def find_symbol(self, query: str, exact: bool = False, kinds: Optional[list] = None, max_results: int = 30) -> str:
+        """Find symbol definitions using grep (simplified fallback)."""
+        # Use search_code with a pattern that matches def/class/function declarations
+        patterns = []
+        if not kinds or "function" in str(kinds):
+            patterns.append(f"def {query}")
+            patterns.append(f"fn {query}")
+            patterns.append(f"function {query}")
+        if not kinds or "class" in str(kinds):
+            patterns.append(f"class {query}")
+            patterns.append(f"struct {query}")
+        if not patterns:
+            patterns.append(query)
+        results = await self.search_code(query=query, max_results=max_results)
+        return results
 
     # ── find_definition ───────────────────────────────────────────────────────
 
-    async def find_definition(
-        self,
-        name: str,
-        hint_file: Optional[str] = None,
-    ) -> str:
-        hint_paths: list[Path] = []
-        if hint_file:
-            hp = self.ctx._resolve_path(hint_file)
-            if hp.exists():
-                hint_paths.append(hp)
-
-        sites = find_definition(name, self.ctx.workspace, hint_paths=hint_paths or None)
-
-        if not sites:
-            return f"No definition found for '{name}' in workspace."
-
-        lines = [f"## Definition sites for `{name}` ({len(sites)} found)\n"]
-        for s in sites:
-            lines.append(s.render(self.ctx.workspace))
-        return "\n".join(lines)
+    async def find_definition(self, name: str, hint_file: Optional[str] = None) -> str:
+        """Find where a symbol is defined using grep."""
+        search_path = hint_file or ""
+        # Search for definition patterns
+        query = f"def {name}|class {name}|fn {name}|function {name}|{name} ="
+        return await self.search_code(query=query, path=search_path or None, regex=True, max_results=20)
 
     # ── find_references ───────────────────────────────────────────────────────
 
-    async def find_references(
-        self,
-        name: str,
-        hint_file: Optional[str] = None,
-        include_definitions: bool = False,
-    ) -> str:
-        hint_paths: list[Path] = []
-        if hint_file:
-            hp = self.ctx._resolve_path(hint_file)
-            if hp.exists():
-                hint_paths.append(hp)
-
-        refs = find_references(
-            name,
-            self.ctx.workspace,
-            hint_paths=hint_paths or None,
-            include_definitions=include_definitions,
-        )
-
-        if not refs:
-            return f"No references found for '{name}' in workspace."
-
-        by_kind: dict[str, list[ReferenceSite]] = {}
-        for r in refs:
-            by_kind.setdefault(r.ref_kind, []).append(r)
-
-        kind_order = ["call", "import", "type_hint", "assign", "definition", "unknown"]
-        lines = [f"## References to `{name}` ({len(refs)} found)\n"]
-        for kind in kind_order:
-            group = by_kind.get(kind, [])
-            if not group:
-                continue
-            lines.append(f"### {kind.replace('_', ' ').title()} ({len(group)})")
-            for r in group:
-                lines.append(r.render(self.ctx.workspace))
-            lines.append("")
-        return "\n".join(lines)
+    async def find_references(self, name: str, hint_file: Optional[str] = None, include_definitions: bool = False) -> str:
+        """Find all references to a symbol using grep."""
+        return await self.search_code(query=name, max_results=50)

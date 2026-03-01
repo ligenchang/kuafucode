@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from nvagent.core.symbols import extract_symbols
+# symbols removed - use simple preview fallback
 from nvagent.tools.handlers import BaseHandler
 
 
@@ -83,26 +83,11 @@ class FileHandler(BaseHandler):
                     "Use search_code(query) to find a specific keyword/pattern and its line number.",
                     "",
                 ]
-                try:
-                    _sym_idx = extract_symbols(fpath)
-                    if not _sym_idx.is_empty() and _sym_idx.symbols:
-                        _sym_lines.append("## Symbols (name  [line]):")
-                        for sym in _sym_idx.symbols[:120]:
-                            _sym_lines.append(f"  {sym}")
-                        if len(_sym_idx.symbols) > 120:
-                            _sym_lines.append(
-                                f"  ... ({len(_sym_idx.symbols) - 120} more — use search_code)"
-                            )
-                    else:
-                        _sym_lines.append("## File preview (first 30 lines):")
-                        for i, ln in enumerate(lines_list[:30], 1):
-                            _sym_lines.append(f"  {i:4d} | {ln.rstrip()}")
-                        if total > 30:
-                            _sym_lines.append(f"  ... {total - 30} more lines")
-                except Exception:
-                    _sym_lines.append("## File preview (first 30 lines):")
-                    for i, ln in enumerate(lines_list[:30], 1):
-                        _sym_lines.append(f"  {i:4d} | {ln.rstrip()}")
+                _sym_lines.append("## File preview (first 40 lines):")
+                for i, ln in enumerate(lines_list[:40], 1):
+                    _sym_lines.append(f"  {i:4d} | {ln.rstrip()}")
+                if total > 40:
+                    _sym_lines.append(f"  ... {total - 40} more lines")
 
                 result = "\n".join(_sym_lines)
                 self.ctx._read_result_cache.put(_cache_key_path, mtime_ns, result)
@@ -142,6 +127,13 @@ class FileHandler(BaseHandler):
             return f"Error: {reason}"
 
         stale_warning = self.ctx._check_stale(fpath)
+        # Hard-fail if file was externally modified since last read
+        if stale_warning and fpath.exists():
+            return (
+                f"Error: {stale_warning}\n"
+                f"Re-read the file first with read_file({path!r}) to get the current content, "
+                f"then retry your write."
+            )
 
         new_sl = content.splitlines()
         new_sl_kw = content.splitlines(keepends=True)
@@ -219,8 +211,6 @@ class FileHandler(BaseHandler):
 
         lines = len(new_sl)
         result = f"{_large_file_note}✓ Written: {fpath} ({lines} lines){diff_info}"
-        if stale_warning:
-            result = stale_warning + "\n" + result
         return result
 
     # ── write_files ───────────────────────────────────────────────────────────
@@ -232,10 +222,24 @@ class FileHandler(BaseHandler):
         for _f in files:
             _seen[_f.get("path", "")] = _f
         deduped = list(_seen.values())
-        tasks = [self.write_file(f.get("path", ""), f.get("content", "")) for f in deduped]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # When a confirm_fn is installed, serialize writes so prompts don't interleave.
+        # Otherwise run concurrently for speed.
+        if self.ctx.confirm_fn is not None:
+            results = []
+            for f in deduped:
+                try:
+                    r = await self.write_file(f.get("path", ""), f.get("content", ""))
+                except Exception as e:
+                    r = f"Error [{f.get('path', '?')}]: {e}"
+                results.append((f, r))
+        else:
+            tasks = [self.write_file(f.get("path", ""), f.get("content", "")) for f in deduped]
+            raw = await asyncio.gather(*tasks, return_exceptions=True)
+            results = list(zip(deduped, raw))
+
         parts = []
-        for f, r in zip(deduped, results):
+        for f, r in results:
             path = f.get("path", "(unknown)")
             parts.append(str(r) if not isinstance(r, Exception) else f"Error [{path}]: {r}")
         return "\n".join(parts)
@@ -266,6 +270,13 @@ class FileHandler(BaseHandler):
             return f"Error: {reason}"
 
         stale_warning = self.ctx._check_stale(fpath)
+        # Hard-fail if file was externally modified since last read
+        if stale_warning and fpath.exists():
+            return (
+                f"Error: {stale_warning}\n"
+                f"Re-read the file first with read_file({path!r}) to get the current content, "
+                f"then retry your edit."
+            )
 
         if not fpath.exists():
             if create_if_missing and edits:
@@ -412,8 +423,6 @@ class FileHandler(BaseHandler):
             summary += "\nWarnings:\n" + "\n".join(errors)
         if diff_str:
             summary += f"\nDiff:\n```diff\n{diff_str}\n```"
-        if stale_warning:
-            summary = stale_warning + "\n" + summary
         return summary
 
     # ── delete_file ───────────────────────────────────────────────────────────

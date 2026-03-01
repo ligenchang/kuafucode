@@ -1,0 +1,34 @@
+# nvagent configuration
+# Get your NVIDIA NIM API key from https://build.nvidia.com
+
+[api]
+api_key = ""
+base_url = "https://integrate.api.nvidia.com/v1"
+
+[models]
+default = "nvidia/nemotron-3-nano-30b-a3b"
+
+[agent]
+max_tokens = 16384
+temperature = 0.2
+safe_mode = false
+dry_run = false
+max_file_bytes = 512000
+max_context_files = 50
+
+[context]
+ignore_patterns = [
+    ".git", "__pycache__", "node_modules", ".venv", "venv",
+    "*.pyc", "*.egg-info", "dist", "build",
+    ".DS_Store", "*.min.js", "*.min.css", "package-lock.json",
+    "yarn.lock", "*.lock", ".env", ".env.*"
+]
+
+[safety]
+git_checkpoint = true
+loop_detection = true
+max_identical_calls = 3
+loop_window = 8
+max_tokens_per_task = 120000
+max_wall_seconds = 900.0
+max_tool_calls = 150

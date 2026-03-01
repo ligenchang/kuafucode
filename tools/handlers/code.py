@@ -1,279 +1,139 @@
-"""
-Code intelligence handlers:
-  get_symbols, get_dep_graph, run_analysis
-"""
+"""Code intelligence handlers: get_symbols, get_dep_graph, run_analysis."""
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import re
+import subprocess
+import shutil
 from pathlib import Path
 from typing import Optional
 
-from nvagent.core.symbols import (
-    extract_symbols,
-    build_symbol_context,
-    resolve_imports,
-)
-from nvagent.core.symbols import get_dependency_graph
-from nvagent.core.analysis import (
-    run_analysis,
-    run_all_linters,
-    detect_linters,
-    format_issues,
-    AnalysisIssue,
-)
 from nvagent.tools.handlers import BaseHandler
+
+_SOURCE_EXTS = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".c", ".cpp", ".h"}
+
+
+def _extract_symbols_python(path: Path) -> list[str]:
+    """Extract function/class definitions from a Python file using ast."""
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+        tree = ast.parse(source)
+        symbols = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = [a.arg for a in node.args.args]
+                symbols.append(f"  def {node.name}({', '.join(args)})  [line {node.lineno}]")
+            elif isinstance(node, ast.ClassDef):
+                symbols.append(f"  class {node.name}  [line {node.lineno}]")
+        return symbols
+    except Exception:
+        return []
+
+
+def _extract_symbols_generic(path: Path) -> list[str]:
+    """Extract function/class definitions using regex for non-Python files."""
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+        patterns = [
+            (r"^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)", "function"),
+            (r"^\s*(?:export\s+)?class\s+(\w+)", "class"),
+            (r"^\s*(?:pub\s+)?fn\s+(\w+)", "fn"),
+            (r"^\s*(?:public|private|protected)?\s*(?:static\s+)?(?:\w+)\s+(\w+)\s*\(", "method"),
+            (r"^\s*(?:func|def)\s+(\w+)", "func"),
+            (r"^\s*type\s+(\w+)\s*(?:struct|interface)", "type"),
+        ]
+        symbols = []
+        for i, line in enumerate(source.splitlines(), 1):
+            for pattern, kind in patterns:
+                m = re.match(pattern, line)
+                if m:
+                    symbols.append(f"  {kind} {m.group(1)}  [line {i}]")
+                    break
+        return symbols
+    except Exception:
+        return []
 
 
 class CodeHandler(BaseHandler):
     """Handles get_symbols, get_dep_graph, run_analysis."""
 
-    _SOURCE_EXTS = {
-        ".py",
-        ".ts",
-        ".tsx",
-        ".js",
-        ".jsx",
-        ".go",
-        ".rs",
-        ".java",
-        ".cs",
-        ".c",
-        ".cpp",
-        ".h",
-        ".hpp",
-    }
-
-    # ── get_symbols ───────────────────────────────────────────────────────────
-
-    async def get_symbols(
-        self,
-        path: str,
-        include_imports: bool = False,
-        follow_imports: bool = False,
-    ) -> str:
-        target = self.ctx._resolve_path(path)
-
-        if not target.exists():
-            return f"Error: Path not found: {target}"
-
-        if target.is_dir():
-            files = sorted(
-                [f for f in target.iterdir() if f.is_file() and f.suffix in self._SOURCE_EXTS],
-                key=lambda p: p.name,
-            )
-            if not files:
-                return f"No source files found in {target}"
-            ctx = build_symbol_context(files, self.ctx.workspace, include_imports=include_imports)
-            return ctx or f"No symbols extracted from {target}"
-
-        idx = extract_symbols(target)
-        if idx.is_empty():
-            return f"No symbols found in {target} (unsupported language or empty file)"
-
-        try:
-            rel = target.relative_to(self.ctx.workspace)
-        except ValueError:
-            rel = target
-
-        lines: list[str] = [f"## Symbols: {rel}  [{idx.language}]", ""]
-
-        if include_imports and idx.imports:
-            lines.append("### Imports")
-            for imp in idx.imports[:20]:
-                lines.append(f"  {imp}")
-            if len(idx.imports) > 20:
-                lines.append(f"  ... ({len(idx.imports) - 20} more)")
-            lines.append("")
-
-        if idx.symbols:
-            lines.append("### Definitions")
-            for sym in idx.symbols[:80]:
-                lines.append(f"  {sym}")
-            if len(idx.symbols) > 80:
-                lines.append(f"  ... ({len(idx.symbols) - 80} more symbols)")
-
-        if follow_imports:
-            loop_gs = asyncio.get_event_loop()
-            deps = await loop_gs.run_in_executor(
-                None, lambda: resolve_imports(target, self.ctx.workspace, max_depth=1)
-            )
-            if deps:
-                lines.append("")
-                lines.append("### Imported workspace files")
-                dep_idxs = await asyncio.gather(
-                    *[loop_gs.run_in_executor(None, extract_symbols, dep) for dep in deps[:10]]
-                )
-                for dep, dep_idx in zip(deps[:10], dep_idxs):
-                    if not dep_idx.is_empty():
-                        try:
-                            dep_rel = dep.relative_to(self.ctx.workspace)
-                        except ValueError:
-                            dep_rel = dep
-                        lines.append(f"  ── {dep_rel}  [{dep_idx.language}]")
-                        for sym in dep_idx.symbols[:15]:
-                            lines.append(f"    {sym}")
-                        if len(dep_idx.symbols) > 15:
-                            lines.append(f"    ... ({len(dep_idx.symbols) - 15} more)")
-                if len(deps) > 10:
-                    lines.append(f"  ... ({len(deps) - 10} more imported files)")
-
-        return "\n".join(lines)
-
-    # ── get_dep_graph ─────────────────────────────────────────────────────────
-
-    async def get_dep_graph(
-        self,
-        path: str,
-        show_dependents: bool = True,
-        show_transitive: bool = False,
-        show_external: bool = True,
-        detect_cycles: bool = False,
-        max_depth: int = 3,
-    ) -> str:
+    async def get_symbols(self, path: str, include_imports: bool = False, follow_imports: bool = False) -> str:
+        """Extract symbol definitions from a file or directory."""
         target = self.ctx._resolve_path(path)
         if not target.exists():
             return f"Error: Path not found: {target}"
-
-        graph = get_dependency_graph(self.ctx.workspace)
-
-        if target.is_dir():
-            files = sorted(
-                f for f in target.iterdir() if f.is_file() and f.suffix in self._SOURCE_EXTS
-            )
-            if not files:
-                return f"No source files found in {target}"
-        else:
-            files = [target]
-
-        lines: list[str] = []
-
-        for fpath in files:
-            try:
-                rel = fpath.relative_to(self.ctx.workspace)
-            except ValueError:
-                rel = fpath
-
-            node = graph.build_file(fpath)
-            lines.append(f"## Dependency graph: {rel}  [{node.language}]")
-
-            if node.dep_files:
-                lines.append(f"\n### Direct imports ({len(node.dep_files)})")
-                for dep in node.dep_files:
-                    try:
-                        dr = dep.relative_to(self.ctx.workspace)
-                    except ValueError:
-                        dr = dep
-                    lines.append(f"  {dr}")
-            else:
-                lines.append("\n### Direct imports\n  (none resolved in workspace)")
-
-            if show_dependents:
-                deps_on_me = graph.dependents(fpath)
-                if deps_on_me:
-                    lines.append(f"\n### Imported by ({len(deps_on_me)})")
-                    for dep in deps_on_me:
-                        try:
-                            dr = dep.relative_to(self.ctx.workspace)
-                        except ValueError:
-                            dr = dep
-                        lines.append(f"  {dr}")
-                else:
-                    loop_dg = asyncio.get_event_loop()
-                    await loop_dg.run_in_executor(
-                        None, lambda: graph.build_workspace(max_files=500)
-                    )
-                    deps_on_me = graph.dependents(fpath)
-                    if deps_on_me:
-                        lines.append(f"\n### Imported by ({len(deps_on_me)})")
-                        for dep in deps_on_me:
-                            try:
-                                dr = dep.relative_to(self.ctx.workspace)
-                            except ValueError:
-                                dr = dep
-                            lines.append(f"  {dr}")
-                    else:
-                        lines.append("\n### Imported by\n  (not imported by any workspace file)")
-
-            if show_transitive:
-                lines.append(f"\n### Transitive dependency tree (depth ≤ {max_depth})")
-                tree = graph.render_tree(fpath, max_depth=max_depth)
-                for tl in tree.splitlines()[1:]:
-                    lines.append(tl)
-
-            if show_external and node.external_pkgs:
-                lines.append(f"\n### External packages ({len(node.external_pkgs)})")
-                for pkg in sorted(set(node.external_pkgs)):
-                    lines.append(f"  {pkg}")
-
-            lines.append("")
-
-        if detect_cycles:
-            loop_dg = asyncio.get_event_loop()
-            await loop_dg.run_in_executor(None, lambda: graph.build_workspace(max_files=1000))
-            cycles = graph.detect_cycles()
-            if cycles:
-                lines.append(f"### ⚠ Circular import cycles ({len(cycles)} detected)")
-                for cycle in cycles:
-                    lines.append("  " + " → ".join(cycle))
-            else:
-                lines.append("### ✓ No circular imports detected")
-
-        lines.append(f"\n---\nGraph cache: {graph.stats()}")
-        return "\n".join(lines)
-
-    # ── run_analysis ──────────────────────────────────────────────────────────
-
-    async def run_analysis(
-        self,
-        tool: str,
-        path: Optional[str] = None,
-        fix: bool = False,
-        max_issues: int = 50,
-    ) -> str:
-        tool_lower = tool.lower()
-        target_path = Path(path) if path else None
-        if target_path and not target_path.is_absolute():
-            target_path = (self.ctx.workspace / target_path).resolve()
-
-        if tool_lower == "detect":
-            available = detect_linters(self.ctx.workspace)
-            if not available:
-                return "No supported linters found in PATH (ruff, mypy, pyright, tsc, eslint)."
-            return "Available linters: " + ", ".join(available)
-
-        if tool_lower == "all":
-            loop = asyncio.get_event_loop()
-            results = await loop.run_in_executor(
-                None, lambda: run_all_linters(self.ctx.workspace, target_path, fix)
-            )
-            all_issues: list[AnalysisIssue] = []
-            for issues in results.values():
-                all_issues.extend(issues)
-            if not all_issues:
-                return "All linters passed — no issues found."
-            _sev_order = {"error": 0, "warning": 1, "note": 2, "info": 3}
-            all_issues.sort(key=lambda i: (_sev_order.get(i.severity, 9), i.file, i.line))
-            summary = f"{len(all_issues)} issue(s) across {', '.join(results)} — "
-            summary += ", ".join(f"{t}: {len(v)}" for t, v in results.items() if v)
-            return (
-                summary
-                + "\n\n"
-                + format_issues(all_issues, self.ctx.workspace, max_issues=max_issues)
-            )
 
         loop = asyncio.get_event_loop()
+
+        if target.is_dir():
+            files = sorted(f for f in target.iterdir() if f.is_file() and f.suffix in _SOURCE_EXTS)
+            if not files:
+                return f"No source files found in {target}"
+            results = []
+            for f in files[:20]:
+                syms = await loop.run_in_executor(None, _extract_symbols_python if f.suffix == ".py" else _extract_symbols_generic, f)
+                if syms:
+                    rel = f.relative_to(self.ctx.workspace) if f.is_relative_to(self.ctx.workspace) else f
+                    results.append(f"### {rel}\n" + "\n".join(syms))
+            return "\n\n".join(results) or f"No symbols found in {target}"
+
+        rel = target.relative_to(self.ctx.workspace) if target.is_relative_to(self.ctx.workspace) else target
+        if target.suffix == ".py":
+            symbols = await loop.run_in_executor(None, _extract_symbols_python, target)
+        else:
+            symbols = await loop.run_in_executor(None, _extract_symbols_generic, target)
+
+        if not symbols:
+            return f"No symbols found in {rel}"
+        return f"## Symbols: {rel}\n" + "\n".join(symbols)
+
+    async def get_dep_graph(self, path: str, show_dependents: bool = True, show_transitive: bool = False, show_external: bool = True) -> str:
+        """Show import dependencies using grep."""
+        target = self.ctx._resolve_path(path)
+        if not target.exists():
+            return f"Error: Path not found: {target}"
+
         try:
-            issues = await loop.run_in_executor(
-                None, lambda: run_analysis(tool_lower, self.ctx.workspace, target_path, fix)
-            )
-        except ValueError as exc:
-            return f"Error: {exc}"
+            source = target.read_text(encoding="utf-8", errors="replace")
+            imports = []
+            for line in source.splitlines():
+                line = line.strip()
+                if line.startswith(("import ", "from ")) or "require(" in line:
+                    imports.append(f"  {line}")
+                if len(imports) >= 50:
+                    break
+            rel = target.relative_to(self.ctx.workspace) if target.is_relative_to(self.ctx.workspace) else target
+            if not imports:
+                return f"No imports found in {rel}"
+            return f"## Dependencies: {rel}\n" + "\n".join(imports)
+        except Exception as e:
+            return f"Error reading {path}: {e}"
 
-        if not issues:
-            return f"{tool} — no issues found." + (" (auto-fix applied)" if fix else "")
+    async def run_analysis(self, path: str = ".", checks: Optional[list] = None) -> str:
+        """Run available linters on the specified path."""
+        target = self.ctx._resolve_path(path)
+        results = []
+        loop = asyncio.get_event_loop()
 
-        _sev_order2 = {"error": 0, "warning": 1, "note": 2, "info": 3}
-        issues.sort(key=lambda i: (_sev_order2.get(i.severity, 9), i.file, i.line))
-        summary2 = f"{tool}: {len(issues)} issue(s)" + (" (auto-fix applied)" if fix else "")
-        return summary2 + "\n\n" + format_issues(issues, self.ctx.workspace, max_issues=max_issues)
+        def _run_linter(cmd: list[str]) -> str:
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, cwd=self.ctx.workspace, timeout=30)
+                return (r.stdout + r.stderr).strip()
+            except Exception as e:
+                return f"Error: {e}"
+
+        if shutil.which("ruff") and (not checks or "ruff" in checks):
+            out = await loop.run_in_executor(None, _run_linter, ["ruff", "check", str(target)])
+            if out:
+                results.append(f"## Ruff\n{out[:3000]}")
+
+        if shutil.which("mypy") and (not checks or "mypy" in checks):
+            out = await loop.run_in_executor(None, _run_linter, ["mypy", str(target), "--no-error-summary"])
+            if out:
+                results.append(f"## Mypy\n{out[:3000]}")
+
+        if not results:
+            return "No linters available. Install ruff or mypy for code analysis."
+        return "\n\n".join(results)

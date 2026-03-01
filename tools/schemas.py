@@ -176,6 +176,14 @@ TOOL_SCHEMAS = [
                             "stdout and stderr are each capped at max_output_chars/2."
                         ),
                     },
+                    "filter": {
+                        "type": "string",
+                        "description": (
+                            "Regex pattern to filter output lines (case-insensitive). "
+                            "Only lines matching the pattern are returned. "
+                            "Useful for noisy commands — e.g. filter='FAILED|ERROR' to see only failures."
+                        ),
+                    },
                 },
                 "required": ["command"],
             },
@@ -699,6 +707,13 @@ TOOL_SCHEMAS = [
                     "retry_on_fail": {
                         "type": "boolean",
                         "description": "Re-run on transient failures (default: false)",
+                    },
+                    "filter": {
+                        "type": "string",
+                        "description": (
+                            "Regex pattern to filter test output lines (case-insensitive). "
+                            "E.g. filter='FAILED|Error|assert' to focus on failures only."
+                        ),
                     },
                 },
                 "required": [],

@@ -21,7 +21,7 @@ from nvagent.core.execution import (
     build_formatter_command,
 )
 from nvagent.tools.handlers import BaseHandler
-from nvagent.tools.schemas import _kill_proc_group
+from nvagent.core.execution import _kill_proc_group
 
 
 class ExecHandler(BaseHandler):
@@ -35,6 +35,7 @@ class ExecHandler(BaseHandler):
         cwd: Optional[str] = None,
         timeout: int = 60,
         max_output_chars: int = 8000,
+        filter: Optional[str] = None,
     ) -> str:
         ok, reason = self.ctx.sandbox.validate_command(command)
         if not ok:
@@ -44,6 +45,7 @@ class ExecHandler(BaseHandler):
         work_dir = self.ctx._resolve_path(cwd) if cwd else self.ctx.workspace
 
         per_stream_cap = max(512, max_output_chars // 2)
+        stream_fn = self.ctx.stream_fn
 
         try:
             _popen_kwargs: dict = {}
@@ -56,18 +58,76 @@ class ExecHandler(BaseHandler):
                 cwd=work_dir,
                 **_popen_kwargs,
             )
+            self.ctx.active_proc = proc
+
+            # If we have a stream_fn, read stdout/stderr concurrently and emit lines live
+            stdout_chunks: list[str] = []
+            stderr_chunks: list[str] = []
+
+            async def _read_stream(stream: asyncio.StreamReader, buf: list[str], label: str) -> None:
+                while True:
+                    try:
+                        line = await asyncio.wait_for(stream.readline(), timeout=timeout)
+                    except asyncio.TimeoutError:
+                        break
+                    if not line:
+                        break
+                    decoded = line.decode("utf-8", errors="replace")
+                    buf.append(decoded)
+                    if stream_fn:
+                        stream_fn(f"{label}{decoded.rstrip()}")
+
             try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                if stream_fn:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            _read_stream(proc.stdout, stdout_chunks, ""),
+                            _read_stream(proc.stderr, stderr_chunks, "[stderr] "),
+                        ),
+                        timeout=timeout,
+                    )
+                    await proc.wait()
+                else:
+                    raw_stdout, raw_stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                    stdout_chunks = [raw_stdout.decode("utf-8", errors="replace")]
+                    stderr_chunks = [raw_stderr.decode("utf-8", errors="replace")]
             except asyncio.TimeoutError:
                 _kill_proc_group(proc)
                 await proc.wait()
                 return f"⏱ Command timed out after {timeout}s: {command}"
+            except asyncio.CancelledError:
+                _kill_proc_group(proc)
+                await proc.wait()
+                raise
+            finally:
+                self.ctx.active_proc = None
 
-            stdout_str = stdout.decode("utf-8", errors="replace").strip()
-            stderr_str = stderr.decode("utf-8", errors="replace").strip()
+            stdout_str = "".join(stdout_chunks).strip()
+            stderr_str = "".join(stderr_chunks).strip()
             exit_code = proc.returncode
 
+            # Apply filter if specified (grep-style: keep lines matching pattern)
+            filter_note = ""
+            if filter:
+                import re as _re
+                try:
+                    pat = _re.compile(filter, _re.IGNORECASE)
+                    def _filter_text(text: str) -> str:
+                        matched = [l for l in text.splitlines() if pat.search(l)]
+                        return "\n".join(matched)
+                    orig_stdout_lines = len(stdout_str.splitlines())
+                    orig_stderr_lines = len(stderr_str.splitlines())
+                    stdout_str = _filter_text(stdout_str)
+                    stderr_str = _filter_text(stderr_str)
+                    kept = len(stdout_str.splitlines()) + len(stderr_str.splitlines())
+                    total_orig = orig_stdout_lines + orig_stderr_lines
+                    filter_note = f"[filter={filter!r}: {kept}/{total_orig} lines matched]"
+                except _re.error as e:
+                    filter_note = f"[filter error: {e}]"
+
             parts = [f"$ {command}", f"Exit code: {exit_code}"]
+            if filter_note:
+                parts.append(filter_note)
 
             if stdout_str:
                 stdout_total = len(stdout_str)
@@ -118,6 +178,7 @@ class ExecHandler(BaseHandler):
         framework: Optional[str] = None,
         extra_args: Optional[list] = None,
         retry_on_fail: bool = False,
+        filter: Optional[str] = None,
     ) -> str:
         fw = framework or detect_test_framework(self.ctx.workspace)
         if not fw:
@@ -158,6 +219,18 @@ class ExecHandler(BaseHandler):
             suite.duration_s = suite.duration_s or duration
 
             agent_str = suite.to_agent_str()
+
+            # Apply output filter if requested
+            if filter:
+                import re as _re
+                try:
+                    pat = _re.compile(filter, _re.IGNORECASE)
+                    filtered_lines = [l for l in agent_str.splitlines() if pat.search(l)]
+                    total = len(agent_str.splitlines())
+                    kept = len(filtered_lines)
+                    agent_str = "\n".join(filtered_lines) + f"\n[filter={filter!r}: {kept}/{total} lines]"
+                except _re.error:
+                    pass
 
             if suite.success or not retry_on_fail:
                 return agent_str

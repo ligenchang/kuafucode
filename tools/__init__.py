@@ -60,6 +60,7 @@ class ToolExecutor:
         safe_mode: bool = True,
         dry_run: bool = False,
         mcp_client: Optional[McpClient] = None,
+        stream_fn: Optional[Callable[[str], None]] = None,
     ) -> None:
         # ── Shared context (all handlers share this object) ───────────────────
         self._ctx = ToolContext(
@@ -68,6 +69,7 @@ class ToolExecutor:
             confirm_fn=confirm_fn,
             safe_mode=safe_mode,
             dry_run=dry_run,
+            stream_fn=stream_fn,
         )
 
         # ── Optional MCP client ───────────────────────────────────────────────
@@ -152,6 +154,103 @@ class ToolExecutor:
             except (ValueError, TypeError):
                 self._dispatch_params[_tname] = None
 
+        # Load user plugins from .nvagent/tools/*.py
+        self._plugin_schemas: list[dict] = []
+        self._load_plugins(workspace)
+
+    def _load_plugins(self, workspace: Path) -> None:
+        """Load custom tool plugins from .nvagent/tools/*.py.
+
+        Each plugin file should define one or more async functions decorated
+        with @nvagent_tool(description="...", parameters={...}).  The decorator
+        is injected into the module's namespace automatically so plugins don't
+        need to import it.
+
+        Example plugin (.nvagent/tools/my_tool.py):
+
+            @nvagent_tool(
+                description="Fetch a URL and return its body",
+                parameters={"type": "object", "properties": {
+                    "url": {"type": "string", "description": "URL to fetch"}
+                }, "required": ["url"]}
+            )
+            async def fetch_url(url: str) -> str:
+                import urllib.request
+                return urllib.request.urlopen(url).read(4096).decode()
+        """
+        import importlib.util
+
+        plugin_dir = workspace / ".nvagent" / "tools"
+        if not plugin_dir.is_dir():
+            return
+
+        # Decorator injected into plugin namespace
+        _registered: list[tuple[str, object, dict]] = []
+
+        def nvagent_tool(description: str = "", parameters: dict | None = None):
+            def decorator(fn):
+                _registered.append((fn.__name__, fn, {
+                    "type": "function",
+                    "function": {
+                        "name": fn.__name__,
+                        "description": description or fn.__doc__ or "",
+                        "parameters": parameters or {"type": "object", "properties": {}, "required": []},
+                    }
+                }))
+                return fn
+            return decorator
+
+        for plugin_path in sorted(plugin_dir.glob("*.py")):
+            if plugin_path.name.startswith("_"):
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"nvagent_plugin_{plugin_path.stem}", plugin_path
+                )
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                # Inject decorator and workspace into plugin namespace
+                module.nvagent_tool = nvagent_tool  # type: ignore[attr-defined]
+                module.workspace = workspace  # type: ignore[attr-defined]
+                _registered.clear()
+                spec.loader.exec_module(module)
+                for tool_name, fn, schema in _registered:
+                    if tool_name in self._dispatch:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "Plugin tool %r overrides built-in — skipping. "
+                            "Rename the function to avoid conflicts.", tool_name
+                        )
+                        continue
+                    self._dispatch[tool_name] = fn
+                    self._plugin_schemas.append(schema)
+                    # Cache params for new tool
+                    try:
+                        _sig = inspect.signature(fn)
+                        _has_varkw = any(
+                            p.kind == inspect.Parameter.VAR_KEYWORD
+                            for p in _sig.parameters.values()
+                        )
+                        self._dispatch_params[tool_name] = (
+                            None if _has_varkw else frozenset(_sig.parameters)
+                        )
+                    except (ValueError, TypeError):
+                        self._dispatch_params[tool_name] = None
+                if _registered:
+                    import logging
+                    logging.getLogger(__name__).info(
+                        "Loaded %d tool(s) from plugin %s: %s",
+                        len(_registered),
+                        plugin_path.name,
+                        ", ".join(r[0] for r in _registered),
+                    )
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Failed to load plugin %s: %s", plugin_path.name, exc
+                )
+
     # ── Context property passthrough (backward-compat) ────────────────────────
 
     @property
@@ -178,29 +277,53 @@ class ToolExecutor:
     def confirm_fn(self, value):
         self._ctx.confirm_fn = value
 
+    @property
+    def stream_fn(self):
+        return self._ctx.stream_fn
+
+    @stream_fn.setter
+    def stream_fn(self, value):
+        self._ctx.stream_fn = value
+
     # ── Active schemas ────────────────────────────────────────────────────────
 
     @property
     def active_schemas(self) -> list[dict]:
-        """Built-in tool schemas merged with schemas from running MCP servers."""
-        if self._mcp_client is None:
-            return TOOL_SCHEMAS
-        mcp_schemas = self._mcp_client.tool_schemas
-        if not mcp_schemas:
-            return TOOL_SCHEMAS
-        return TOOL_SCHEMAS + mcp_schemas
+        """Built-in tool schemas + plugin schemas + MCP server schemas."""
+        schemas = list(TOOL_SCHEMAS)
+        if self._plugin_schemas:
+            schemas = schemas + self._plugin_schemas
+        if self._mcp_client:
+            mcp_schemas = self._mcp_client.tool_schemas
+            if mcp_schemas:
+                schemas = schemas + mcp_schemas
+        return schemas
 
     # ── Turn lifecycle ────────────────────────────────────────────────────────
+
+    def kill_active_proc(self) -> bool:
+        """Kill the currently running subprocess, if any. Returns True if something was killed."""
+        proc = self._ctx.active_proc
+        if proc is not None:
+            from nvagent.core.execution import _kill_proc_group
+            _kill_proc_group(proc)
+            self._ctx.active_proc = None
+            return True
+        return False
 
     def begin_turn(self) -> None:
         """Reset per-turn tracking at the start of each agent turn."""
         self._ctx.changed_files = []
         self._ctx._current_turn_backups = {}
 
-    def end_turn(self) -> None:
-        """Save undo snapshot at end of a turn that modified files."""
+    def end_turn(self, label: str = "") -> None:
+        """Save undo snapshot at end of a turn that modified files.
+
+        label is shown in /undo output so the user knows what's being rolled back.
+        """
         if self._ctx._current_turn_backups:
-            self._ctx.undo_stack.append(self._ctx._current_turn_backups.copy())
+            entry = {"_label": label, **self._ctx._current_turn_backups.copy()}
+            self._ctx.undo_stack.append(entry)
         self._ctx._current_turn_backups = {}
 
     async def undo_last_turn(self) -> str:
@@ -208,6 +331,7 @@ class ToolExecutor:
         if not self._ctx.undo_stack:
             return "Nothing to undo — no file changes recorded this session."
         backups = self._ctx.undo_stack.pop()
+        label = backups.pop("_label", "")
         restored: list[str] = []
         for abs_path_str, old_content in backups.items():
             fpath = Path(abs_path_str)
@@ -218,7 +342,8 @@ class ToolExecutor:
             else:
                 fpath.write_text(old_content, encoding="utf-8")
                 restored.append(f"restored {fpath.name}")
-        return f"↩ Undone: {', '.join(restored)}" if restored else "Nothing to restore."
+        suffix = f' — "{label}"' if label else ""
+        return f"↩ Undone{suffix}: {', '.join(restored)}" if restored else "Nothing to restore."
 
     # ── last_read_mtime (public API used by core/loop.py) ─────────────────────
 

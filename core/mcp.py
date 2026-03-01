@@ -254,8 +254,33 @@ class _McpServerProcess:
         result = resp.get("result", {})
         return result.get("tools", [])
 
+    def _is_alive(self) -> bool:
+        """Return True if the subprocess is still running."""
+        return (
+            self._started
+            and self._proc is not None
+            and self._proc.returncode is None
+        )
+
+    async def _restart(self) -> bool:
+        """Stop and restart the server. Returns True if restart succeeded."""
+        logger.info("MCP server %r crashed — attempting restart", self.cfg.name)
+        await self.stop()
+        ok = await self.start()
+        if ok:
+            logger.info("MCP server %r restarted successfully", self.cfg.name)
+        else:
+            logger.warning("MCP server %r failed to restart", self.cfg.name)
+        return ok
+
     async def call_tool(self, tool_name: str, arguments: dict) -> str:
         """Call a tool on this server. Returns text result or error string."""
+        # Auto-restart if process died
+        if self._started and not self._is_alive():
+            restarted = await self._restart()
+            if not restarted:
+                return f"[MCP] Server '{self.cfg.name}' crashed and could not be restarted."
+
         if not self._started:
             return f"[MCP] Server '{self.cfg.name}' is not running."
         try:
@@ -383,6 +408,24 @@ class McpClient:
             return_exceptions=True,
         )
         self._servers.clear()
+
+    def server_status(self) -> list[dict]:
+        """Return status of all configured MCP servers.
+
+        Each entry: {name, running, tool_count, optional}
+        """
+        status = []
+        for cfg in self._configs:
+            proc = self._servers.get(cfg.name)
+            running = proc is not None and proc._is_alive()
+            tool_count = len(proc._tools) if running and proc else 0
+            status.append({
+                "name": cfg.name,
+                "running": running,
+                "tool_count": tool_count,
+                "optional": cfg.optional,
+            })
+        return status
 
     @property
     def tool_schemas(self) -> list[dict]:
